@@ -2,20 +2,41 @@
 #define PAWN_HELPER
 
 #include <vector>
+#include <set>
 #include <string>
 
 namespace client { namespace helper {
 
+struct ColIndices {
+  std::vector<size_t> str;
+  std::vector<size_t> num;
+  std::vector<std::string> var;
+  void add(ColIndices& x) {
+    std::move(begin(x.str), end(x.str), back_inserter(str));
+    std::move(begin(x.num), end(x.num), back_inserter(num));
+    std::move(begin(x.var), end(x.var), back_inserter(var));
+  }
+  void uniq() {
+    auto uniq = std::set<size_t>{std::begin(num), std::end(num)};
+    num = std::vector<size_t>{std::begin(uniq), std::end(uniq)};
+    uniq = std::set<size_t>{std::begin(str), std::end(str)};
+    str = std::vector<size_t>{std::begin(uniq), std::end(uniq)};
+  }
+
+  void sort() {
+    std::sort(std::begin(num), std::end(num));
+    std::sort(std::begin(str), std::end(str));
+  }
+};
+
 class positionTeller {
 public:
-  using vectorCol = std::vector<size_t>;
-  using vectorVar = std::vector<std::string>;
-  positionTeller(const vectorCol &cols, const vectorVar &vars) : _cols{cols}, _vars{vars} {}
-  int operator()(std::string s) const;
-  int operator()(size_t i) const;
+  positionTeller(const ColIndices &cols) : _cols{cols} {}
+  int var(std::string s) const;
+  int str(size_t i) const;
+  int num(size_t i) const;
 private:
-  const vectorCol &_cols;
-  const vectorVar &_vars;
+  const ColIndices &_cols;
 };
 
 bool lexCastPawn(std::vector<std::string> &vstr,

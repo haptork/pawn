@@ -3,16 +3,22 @@
 #include <helper.hpp>
 #include <assert.h>
 
-int client::helper::positionTeller::operator()(std::string s) const {
-  auto it = std::find(begin(_vars), end(_vars), s);
+int client::helper::positionTeller::var(std::string s) const {
+  auto it = std::find(begin(_cols.var), end(_cols.var), s);
   // assert(it != std::end(_vars));
-  return _cols.size() + (it - std::begin(_vars));
+  return _cols.num.size() + (it - std::begin(_cols.var));
 }
 
-int client::helper::positionTeller::operator()(size_t i) const {
-  auto it = std::find(begin(_cols), end(_cols), i);
+int client::helper::positionTeller::str(size_t i) const {
+  auto it = std::find(begin(_cols.str), end(_cols.str), i);
   // assert(it != std::end(_cols));
-  return it - std::begin(_cols);
+  return it - std::begin(_cols.str);
+}
+
+int client::helper::positionTeller::num(size_t i) const {
+  auto it = std::find(begin(_cols.num), end(_cols.num), i);
+  // assert(it != std::end(_cols));
+  return it - std::begin(_cols.num);
 }
 
 bool client::helper::lexCastPawn(std::vector<std::string> &vstr,

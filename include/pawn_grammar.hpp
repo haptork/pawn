@@ -7,6 +7,7 @@
 #include "pawn_ast.hpp"
 #include "mexpr.hpp"
 #include "lexpr.hpp"
+#include "aexpr.hpp"
 #include "error_handler.hpp"
 #include <vector>
 
@@ -28,9 +29,11 @@ namespace client { namespace pawn { namespace parser
         qi::rule<Iterator, std::string(), ascii::space_type> quoted_string;
         qi::rule<Iterator, ast::unit(), ascii::space_type> unit;
         qi::rule<Iterator, std::string(), ascii::space_type> identifier;
+        qi::rule<Iterator, std::vector<unsigned int>(), ascii::space_type> reduceCols;
         qi::rule<Iterator, ascii::space_type> terminal;
         client::math::parser::expression<Iterator> mathExpr;
         client::logical::parser::expression<Iterator> logicalExpr;
+        client::reduce::parser::expression<Iterator> reduceExpr;
     };
 }}}
 

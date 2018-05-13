@@ -1,22 +1,20 @@
-#if !defined(PAWN_REXPR_HPP)
-#define PAWN_REXPR_HPP
+#if !defined(PAWN_SEXPR_HPP)
+#define PAWN_SEXPR_HPP
 
 #define BOOST_SPIRIT_NO_PREDEFINED_TERMINALS
 
 #include <boost/spirit/include/qi.hpp>
-#include "rast.hpp"
-#include "mexpr.hpp"
-#include "sexpr.hpp"
+#include "sast.hpp"
 #include "error_handler.hpp"
 #include <vector>
 
-namespace client { namespace relational { namespace parser
+namespace client { namespace str { namespace parser
 {
     namespace qi = boost::spirit::qi;
     namespace ascii = boost::spirit::ascii;
 
     ///////////////////////////////////////////////////////////////////////////////
-    //  The relational expression grammar
+    //  The math expression grammar
     ///////////////////////////////////////////////////////////////////////////////
     template <typename Iterator>
     struct expression : qi::grammar<Iterator, ast::expr(), ascii::space_type>
@@ -24,9 +22,9 @@ namespace client { namespace relational { namespace parser
         expression(error_handler<Iterator>& error_handler);
 
         qi::rule<Iterator, ast::expr(), ascii::space_type> expr;
-        client::math::parser::expression<Iterator> mathExpr;
-        client::str::parser::expression<Iterator> strExpr;
-        qi::symbols<char, ast::optoken> relational_op;
+        qi::rule<Iterator, std::string(), ascii::space_type> identifier;
+        qi::rule<Iterator, unsigned int, ascii::space_type> colIndex;
+        qi::rule<Iterator, ast::quoted(), ascii::space_type> quoted_string;
     };
 }}}
 

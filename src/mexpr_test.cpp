@@ -30,7 +30,10 @@ int testMath() {
         std::vector<std::string> vars {"xyz"};
 
         ast_printer print;
-        ast_evaluator eval{client::helper::positionTeller{colIndices, vars}};
+        client::helper::ColIndices cl;
+        cl.num = colIndices;
+        cl.var = vars;
+        ast_evaluator eval{client::helper::positionTeller{cl}};
 
         std::string::const_iterator iter = str.begin();
         std::string::const_iterator end = str.end();

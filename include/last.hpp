@@ -102,10 +102,11 @@ namespace client { namespace logical { namespace ast
     private:
         using vectorCol = std::vector<size_t>;
         using vectorVar = std::vector<std::string>;
+        using ColIndices = client::helper::ColIndices;
 
         client::relational::ast::colsEval rColsEval;
     public:
-        using result_type = std::pair<vectorCol, std::string>;
+        using result_type = std::pair<ColIndices, std::string>;
         colsEval(const vectorVar &v) : rColsEval{v} {}
 
         result_type operator()(bool n) const { return result_type{}; }
@@ -126,11 +127,11 @@ namespace client { namespace logical { namespace ast
             result_type res{};
             auto x = boost::apply_visitor(*this, e.first);
             if (x.second.size() > 0) return x;
-            std::move(begin(x.first), end(x.first), back_inserter(res.first));
+            res.first.add(x.first);
             for (const auto& oper : e.rest) {
               x = (*this)(oper);
               if (x.second.size() > 0) return x;
-              std::move(begin(x.first), end(x.first), back_inserter(res.first));
+              res.first.add(x.first);
             }
             return res;
         }
@@ -143,7 +144,7 @@ namespace client { namespace logical { namespace ast
     ///////////////////////////////////////////////////////////////////////////
     struct whatever {
       whatever(bool x) : _x{x} {}
-      auto operator() (const std::vector<double>&) { return _x; }
+      auto operator() (const std::vector<std::string>&, const std::vector<double>&) { return _x; }
     private:
       bool _x;
     };
@@ -153,8 +154,9 @@ namespace client { namespace logical { namespace ast
     private:
         client::relational::ast::evaluator _reval;
     public:
-        using retFnT = std::function<bool(const std::vector<double>&)>;
+        using retFnT = std::function<bool(const std::vector<std::string>&, const std::vector<double>&)>;
         evaluator(client::relational::ast::evaluator reval) : _reval{reval} {}
+        evaluator(helper::positionTeller p) : _reval{p} {}
         typedef retFnT result_type;
 
         retFnT operator()(bool n) const { return whatever{n}; }
@@ -165,8 +167,8 @@ namespace client { namespace logical { namespace ast
         retFnT operator()(optoken const &o, retFnT const &lhs, retFnT const &rhs) const {
             switch (o)
             {
-                case optoken::conjunct: return [lhs, rhs](const std::vector<double> &v) { return lhs(v) && rhs(v); };
-                case optoken::disjunct: return [lhs, rhs](const std::vector<double> &v) { return lhs(v) || rhs(v); };
+                case optoken::conjunct: return [lhs, rhs](const std::vector<std::string>& v1, const std::vector<double> &v2) { return lhs(v1, v2) && rhs(v1, v2); };
+                case optoken::disjunct: return [lhs, rhs](const std::vector<std::string>& v1, const std::vector<double> &v2) { return lhs(v1, v2) || rhs(v1, v2); };
                 default: BOOST_ASSERT(0); return rhs;
             }
             BOOST_ASSERT(0);
@@ -176,7 +178,7 @@ namespace client { namespace logical { namespace ast
         retFnT operator()(unary const& x) const
         {
             retFnT rhs = boost::apply_visitor(*this, x.operand_);
-            return [rhs](const std::vector<double> &v) { return !rhs(v); };
+            return [rhs](const std::vector<std::string>& v1, const std::vector<double> &v2) { return !rhs(v1, v2); };
         }
 
         retFnT operator()(operation const& x, retFnT const& lhs) const

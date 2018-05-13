@@ -66,17 +66,20 @@ namespace client { namespace reduce { namespace ast
     private:
       using vectorCol = std::vector<size_t>;
       using vectorVar = std::vector<std::string>;
+      using ColIndices = client::helper::ColIndices;
       const vectorVar &_v;
     public:
-        using result_type = std::pair<vectorCol, std::string>;
+        using result_type = std::pair<ColIndices, std::string>;
         colsEval(const vectorVar &v) : _v{v} {}
         result_type operator()(variable const &x) const { 
           auto it = std::find(begin(_v), end(_v), x);
-          if (it == std::end(_v)) return std::make_pair(vectorCol{}, x);
+          if (it == std::end(_v)) return std::make_pair(ColIndices{}, x);
           return result_type{};
         }
         result_type operator()(column const &x) const { 
-          return std::make_pair(vectorCol{x}, "");
+          ColIndices res;
+          res.num.push_back(x);
+          return std::make_pair(res, "");
         }
         result_type operator()(operation const& x) const {
             return boost::apply_visitor(*this, x.operand_);
@@ -86,7 +89,7 @@ namespace client { namespace reduce { namespace ast
             for (const auto& oper : e) {
               auto x = (*this)(oper);
               if (x.second.size() > 0) return x;
-              std::move(begin(x.first), end(x.first), back_inserter(res.first));
+              res.first.add(x.first);
             }
             return res;
         }
@@ -97,7 +100,19 @@ namespace client { namespace reduce { namespace ast
     ///////////////////////////////////////////////////////////////////////////
     struct evaluator {
     private:
+      struct indexHelper {
         const helper::positionTeller _index;
+        indexHelper(helper::positionTeller p) : _index{p} {}
+        int operator()(variable var) const {
+          return _index.var(var);
+        }
+
+        int operator()(column n) const {
+          return _index.num(n);
+        }
+      };
+
+        const indexHelper _index;
         bool _sameIndex {false};
     public:
         using resT = std::tuple<std::vector<double>>&;

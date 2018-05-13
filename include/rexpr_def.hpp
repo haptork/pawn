@@ -6,7 +6,7 @@ namespace client { namespace relational { namespace parser
 {
     template <typename Iterator>
     expression<Iterator>::expression(error_handler<Iterator>& error_handler)
-      : expression::base_type(expr), mathExpr{error_handler}
+      : expression::base_type(expr), mathExpr{error_handler}, strExpr{error_handler}
     {
         qi::_1_type _1;
         qi::_2_type _2;
@@ -40,7 +40,8 @@ namespace client { namespace relational { namespace parser
             (">=", ast::optoken::greater_equal)
             ;
 
-        expr = mathExpr >> relational_op >> mathExpr;
+        expr = (mathExpr >> relational_op >> mathExpr)
+             | (strExpr >> relational_op >> strExpr);
 
         ///////////////////////////////////////////////////////////////////////
         // Debugging and error handling and reporting support.

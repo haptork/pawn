@@ -46,9 +46,9 @@ int testPawn() {
             if (x.second.size() > 0) {
               std::cout << "Error: " << x.second << " used before declaration.\n";
             } else {
-              std::sort(std::begin(x.first), std::end(x.first));
+              std::sort(std::begin(x.first.num), std::end(x.first.num));
               std::cout << "\ncolumns are: ";
-              for (auto it : x.first) {
+              for (auto it : x.first.num) {
                 std::cout << it << ", ";
               }
               std::cout << '\n';

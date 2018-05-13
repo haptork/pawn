@@ -19,6 +19,7 @@ int testRelational() {
     typedef client::math::ast::evaluator math_evaluator;
     typedef client::relational::ast::evaluator ast_evaluator;
     typedef client::helper::positionTeller posTeller;
+    using client::helper::ColIndices;
 
     std::string str;
     while (std::getline(std::cin, str))
@@ -32,7 +33,10 @@ int testRelational() {
         std::vector<std::string> vars {"xyz"};
 
         ast_printer print;
-        ast_evaluator eval{math_evaluator{posTeller{colIndices, vars}}};
+        ColIndices cl;
+        cl.num = colIndices;
+        cl.var = vars;
+        ast_evaluator eval{posTeller{cl}};
 
         std::string::const_iterator iter = str.begin();
         std::string::const_iterator end = str.end();
@@ -52,9 +56,10 @@ int testRelational() {
             std::cout << "\n";
             auto e = eval(expression);
             std::vector<double> v;
+            std::vector<std::string> v2;
             v.resize(10);
             std::iota(std::begin(v), std::end(v), 0);
-            std::cout << "result: " << std::boolalpha << e(v);
+            std::cout << "result: " << std::boolalpha << e(v2, v);
             std::cout << "-------------------------\n";
         }
         else

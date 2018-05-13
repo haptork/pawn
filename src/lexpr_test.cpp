@@ -34,7 +34,10 @@ int testLogical() {
         std::vector<std::string> vars {"xyz"};
 
         ast_printer print;
-        ast_evaluator eval{rel_evaluator{math_evaluator{posTeller{colIndices, vars}}}};
+        client::helper::ColIndices cl;
+        cl.num = colIndices;
+        cl.var = vars;
+        ast_evaluator eval{posTeller{cl}};
         cols_evaluator cols{vars};
 
         std::string::const_iterator iter = str.begin();
@@ -59,9 +62,10 @@ int testLogical() {
             } else {
               auto e = eval(expression);
               std::vector<double> v;
+              std::vector<std::string> u;
               v.resize(10);
               std::iota(std::begin(v), std::end(v), 0);
-              std::cout << "result: " << std::boolalpha << e(v);
+              std::cout << "result: " << std::boolalpha << e(u, v);
               std::cout << "-------------------------\n";
             }
         }

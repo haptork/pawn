@@ -117,19 +117,22 @@ namespace client { namespace math { namespace ast
     private:
       using vectorCol = std::vector<size_t>;
       using vectorVar = std::vector<std::string>;
+      using ColIndices = client::helper::ColIndices;
       const vectorVar &_v;
     public:
-        using result_type = std::pair<vectorCol, std::string>;
+        using result_type = std::pair<ColIndices, std::string>;
         colsEval(const vectorVar &v) : _v{v} {}
         result_type operator()(nil) const { BOOST_ASSERT(0); return result_type{}; }
         result_type operator()(double n) const { return result_type{}; }
-        result_type operator()(variable const &x) const { 
+        result_type operator()(variable const &x) const {
           auto it = std::find(begin(_v), end(_v), x);
-          if (it == std::end(_v)) return std::make_pair(vectorCol{}, x);
+          if (it == std::end(_v)) return std::make_pair(ColIndices{}, x);
           return result_type{};
         }
-        result_type operator()(column const &x) const { 
-          return std::make_pair(vectorCol{x}, "");
+        result_type operator()(column const &x) const {
+          ColIndices res;
+          res.num.push_back(x);
+          return std::make_pair(res, "");
         }
         result_type operator()(unary const& x) const {
           return boost::apply_visitor(*this, x.operand_);
@@ -141,11 +144,11 @@ namespace client { namespace math { namespace ast
             result_type res{};
             auto x = boost::apply_visitor(*this, e.first);
             if (x.second.size() > 0) return x;
-            std::move(begin(x.first), end(x.first), back_inserter(res.first));
+            res.first.add(x.first);
             for (const auto& oper : e.rest) {
               x = (*this)(oper);
               if (x.second.size() > 0) return x;
-              std::move(begin(x.first), end(x.first), back_inserter(res.first));
+              res.first.add(x.first);
             }
             return res;
         }
@@ -172,12 +175,12 @@ namespace client { namespace math { namespace ast
         retFnT operator()(nil) const { BOOST_ASSERT(0); return whatever{0.0}; }
         retFnT operator()(double n) const { return whatever{n}; }
         retFnT operator()(variable const &x) const { 
-          auto y = _index(x);
-          return [x, y](const std::vector<double> &v) { return v[y]; };
+          auto y = _index.var(x);
+          return [y](const std::vector<double> &v) { return v[y]; };
         }
         retFnT operator()(column const &x) const { 
-          auto y = _index(x);
-          return [x, y](const std::vector<double> &v) { return v[y]; };
+          auto y = _index.num(x);
+          return [y](const std::vector<double> &v) { return v[y]; };
         }
 
         retFnT operator()(optoken const &o, retFnT const &lhs, retFnT const &rhs) const {

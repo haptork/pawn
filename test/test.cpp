@@ -2,9 +2,11 @@ int testLogical();
 int testMath();
 int testRelational();
 int testPawn();
+int testReduce();
 
 int main() {
-  return testPawn();
+  return testMath();
+  //return testReduce();
 /*
   testMath();
   testRelational();

@@ -141,7 +141,8 @@ sourceT addReduce(sourceT src, Ops ops, int i, ColIndices cols) {
   //   if (isShow(ops, i)) x.dump(); 
   //   return x.build();
   // }
-  auto x = ezl::flow(src).reduce<1>([op, cols](tuple<vector<double>>& res, const vector<string>& key, const vector<double> &cur) -> auto& {
+  auto x = ezl::flow(src).reduce<1>([op, cols](tuple<vector<double>>& res, 
+  const vector<string>& key, const vector<double> &cur) -> auto& {
     //auto fn = parseRedExpr(polish.begin(), polish.end(), cols.num);
     std::get<0>(res)[0] += cur[0];
     return res;

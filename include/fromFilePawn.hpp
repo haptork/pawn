@@ -450,7 +450,7 @@ private:
     std::get<0>(_out).resize(_props.colsString.size());
     std::get<1>(_out).resize(_props.colsNumeric.size());
     auto uniq = std::set<int>(_props.cols.begin(), _props.cols.end());
-    assert(uniq.size() == _props.cols.size() && "Dublicate column in select list.");
+    assert(uniq.size() == _props.cols.size() && "Duplicate column in select list.");
   }
 
   void _divideFiles(int pos, std::vector<int> procs)

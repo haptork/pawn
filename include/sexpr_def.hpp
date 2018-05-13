@@ -1,13 +1,12 @@
-#include "pawn_grammar.hpp"
+#include "sexpr.hpp"
 //#include "error_handler.hpp"
 #include <boost/spirit/include/phoenix_function.hpp>
 
-namespace client { namespace pawn { namespace parser
+namespace client { namespace str { namespace parser
 {
     template <typename Iterator>
     expression<Iterator>::expression(error_handler<Iterator>& error_handler)
-      : expression::base_type(expr), mathExpr{error_handler}, logicalExpr{error_handler}
-      , reduceExpr{error_handler}
+      : expression::base_type(expr)
     {
         qi::_1_type _1;
         qi::_2_type _2;
@@ -31,30 +30,24 @@ namespace client { namespace pawn { namespace parser
 
         typedef function<client::error_handler<Iterator> > error_handler_function;
 
-        expr = src >> *('|' >> unit) >> '|' >> terminal;
+        expr = identifier
+            |  colIndex
+            |  quoted_string;
+            ;
 
-        src = "file" >> quoted_string;
+        identifier = '%' >> raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
 
-        quoted_string = raw[lexeme['"' >> +(char_ - '"') >> '"']];
+        colIndex = '%' >> uint_;
 
-        unit = identifier >> '=' >> mathExpr
-             | "where" >> logicalExpr
-             | "reduce" >> reduceCols >> reduceExpr;
-        
-        reduceCols = *('%' >> uint_);
-
-        identifier = '$' >> raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
-
-        terminal = "show";
+        // quoted_string = raw[lexeme['"' >> +(char_ - '"') >> '"']];
+        quoted_string = '"' >> raw[lexeme[+(char_ - '"')]] >> '"';
         ///////////////////////////////////////////////////////////////////////
         // Debugging and error handling and reporting support.
         BOOST_SPIRIT_DEBUG_NODES(
             (expr)
-            (src)
-            (quoted_string)
-            (unit)
             (identifier)
-            (terminal)
+            (colIndex)
+            (quoted_string)
         );
 
         ///////////////////////////////////////////////////////////////////////
