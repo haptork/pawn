@@ -46,17 +46,25 @@ int testPawn() {
             if (x.second.size() > 0) {
               std::cout << "Error: " << x.second << " used before declaration.\n";
             } else {
-              std::sort(std::begin(x.first.num), std::end(x.first.num));
-              std::cout << "\ncolumns are: ";
-              for (auto it : x.first.num) {
-                std::cout << it << ", ";
+              for (auto& it : x.first) {
+                it.uniq();
+                it.sort();
               }
-              std::cout << '\n';
-              std::cout << "\vvariables are: ";
-              for (auto it : cols.variables()) {
-                std::cout << it << ", ";
+              for (auto& jt : x.first) {
+                std::cout << "\nnum columns are: ";
+                for (auto it : jt.num) {
+                  std::cout << it << ", ";
+                }
+                std::cout << "\nstr columns are: ";
+                for (auto it : jt.str) {
+                  std::cout << it << ", ";
+                }
+                std::cout << "\nvar are: ";
+                for (auto it : jt.var) {
+                  std::cout << it << ", ";
+                }
+                std::cout << "\n----\n";
               }
-              std::cout << '\n';
             }
             /*
             auto e = eval(expression);

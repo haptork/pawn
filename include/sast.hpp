@@ -43,29 +43,36 @@ namespace client { namespace str { namespace ast
 
     struct colsEval {
     private:
-      using vectorCol = std::vector<size_t>;
-      using vectorVar = std::vector<std::string>;
       using ColIndices = client::helper::ColIndices;
-      const vectorVar &_v;
+      const ColIndices &_pre;
+      bool _isInitial {true};
     public:
-        using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const vectorVar &v) : _v{v} {}
-        result_type operator()(variable const &x) const { 
-          auto it = std::find(begin(_v), end(_v), x);
-          if (it == std::end(_v)) return std::make_pair(ColIndices{}, x);
+      using result_type = std::pair<ColIndices, std::string>;
+      colsEval(const ColIndices &v) : _pre{v} {}
+      void notInitial() { _isInitial = false; }
+      result_type operator()(variable const &x) const { 
+        auto it = std::find(begin(_pre.var), end(_pre.var), x);
+        if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
+        return result_type{};
+      }
+      result_type operator()(column const &x) const { 
+        if (!_isInitial) {
+          auto it = std::find(begin(_pre.str), end(_pre.str), x);
+          if (it == std::end(_pre.str)) {
+            return std::make_pair(ColIndices{}, "Error: string column " + std::to_string(x) + " does not persist after reduction.");
+          }
           return result_type{};
         }
-        result_type operator()(column const &x) const { 
-          ColIndices res;
-          res.str.push_back(x);
-          return std::make_pair(res, "");
-        }
-        result_type operator()(quoted const &x) const { 
-          return result_type{};
-        }
-        result_type operator()(expr const& e) const {
-          return boost::apply_visitor(*this, e);
-        }
+        ColIndices res;
+        res.str.push_back(x);
+        return std::make_pair(res, "");
+      }
+      result_type operator()(quoted const &x) const { 
+        return result_type{};
+      }
+      result_type operator()(expr const& e) const {
+        return boost::apply_visitor(*this, e);
+      }
     };
 
     ///////////////////////////////////////////////////////////////////////////

@@ -100,15 +100,14 @@ namespace client { namespace logical { namespace ast
 
     struct colsEval {
     private:
-        using vectorCol = std::vector<size_t>;
-        using vectorVar = std::vector<std::string>;
         using ColIndices = client::helper::ColIndices;
 
         client::relational::ast::colsEval rColsEval;
     public:
         using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const vectorVar &v) : rColsEval{v} {}
+        colsEval(const ColIndices &v) : rColsEval{v} {}
 
+        void notInitial() { rColsEval.notInitial(); }
         result_type operator()(bool n) const { return result_type{}; }
 
         result_type operator()(client::relational::ast::expr const& x) const {

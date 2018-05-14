@@ -16,8 +16,8 @@ int testLogical() {
     typedef client::logical::parser::expression<iterator_type> parser;
     typedef client::logical::ast::expr ast_expression;
     typedef client::logical::ast::printer ast_printer;
-    typedef client::math::ast::evaluator math_evaluator;
-    typedef client::relational::ast::evaluator rel_evaluator;
+    // typedef client::math::ast::evaluator math_evaluator;
+    // typedef client::relational::ast::evaluator rel_evaluator;
     typedef client::logical::ast::evaluator ast_evaluator;
     typedef client::logical::ast::colsEval cols_evaluator;
     typedef client::helper::positionTeller posTeller;
@@ -38,7 +38,7 @@ int testLogical() {
         cl.num = colIndices;
         cl.var = vars;
         ast_evaluator eval{posTeller{cl}};
-        cols_evaluator cols{vars};
+        cols_evaluator cols{cl};
 
         std::string::const_iterator iter = str.begin();
         std::string::const_iterator end = str.end();

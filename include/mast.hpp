@@ -115,21 +115,22 @@ namespace client { namespace math { namespace ast
 
     struct colsEval {
     private:
-      using vectorCol = std::vector<size_t>;
-      using vectorVar = std::vector<std::string>;
       using ColIndices = client::helper::ColIndices;
-      const vectorVar &_v;
+      const ColIndices &_pre;
+      bool _isInitial {true};
     public:
         using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const vectorVar &v) : _v{v} {}
+        colsEval(const ColIndices &v) : _pre{v} {}
+        void notInitial() { _isInitial = false; }
         result_type operator()(nil) const { BOOST_ASSERT(0); return result_type{}; }
         result_type operator()(double n) const { return result_type{}; }
         result_type operator()(variable const &x) const {
-          auto it = std::find(begin(_v), end(_v), x);
-          if (it == std::end(_v)) return std::make_pair(ColIndices{}, x);
+          auto it = std::find(begin(_pre.var), end(_pre.var), x);
+          if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
           return result_type{};
         }
         result_type operator()(column const &x) const {
+          if (!_isInitial) return std::make_pair(ColIndices{}, "Can't access number columns via column index after reduce.");
           ColIndices res;
           res.num.push_back(x);
           return std::make_pair(res, "");

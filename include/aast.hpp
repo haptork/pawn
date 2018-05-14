@@ -64,36 +64,47 @@ namespace client { namespace reduce { namespace ast
 
     struct colsEval {
     private:
-      using vectorCol = std::vector<size_t>;
-      using vectorVar = std::vector<std::string>;
       using ColIndices = client::helper::ColIndices;
-      const vectorVar &_v;
+      const ColIndices &_pre;
+      bool _isInitial {true};
     public:
-        using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const vectorVar &v) : _v{v} {}
-        result_type operator()(variable const &x) const { 
-          auto it = std::find(begin(_v), end(_v), x);
-          if (it == std::end(_v)) return std::make_pair(ColIndices{}, x);
-          return result_type{};
-        }
-        result_type operator()(column const &x) const { 
-          ColIndices res;
-          res.num.push_back(x);
-          return std::make_pair(res, "");
-        }
-        result_type operator()(operation const& x) const {
-            return boost::apply_visitor(*this, x.operand_);
-        }
-        result_type operator()(expr const& e) const {
-            result_type res{};
-            for (const auto& oper : e) {
-              auto x = (*this)(oper);
-              if (x.second.size() > 0) return x;
-              res.first.add(x.first);
-            }
-            return res;
-        }
-    };
+      using result_type = std::pair<ColIndices, std::string>;
+      colsEval(const ColIndices &v) : _pre{v} {}
+      void notInitial() { _isInitial = false; }
+      result_type operator()(variable const &x) { 
+        auto it = std::find(begin(_pre.var), end(_pre.var), x);
+        if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
+        ColIndices res;
+        res.var.push_back(_nm + "_" + x);
+        return std::make_pair(res, "");
+      }
+      result_type operator()(column const &x) { 
+        if (!_isInitial) return std::make_pair(ColIndices{}, "Can't access number columns via column index after reduce.");
+        ColIndices res;
+        res.num.push_back(x);
+        res.var.push_back(_nm + "_" + std::to_string(x));
+        return std::make_pair(res, "");
+      }
+      std::string _nm;
+      result_type operator()(operation const& x) {
+          switch (x.operator_)
+          {
+              case optoken::sum: _nm = std::string{"sum"}; break;
+              case optoken::max: _nm = std::string{"max"};
+          }
+          return boost::apply_visitor(*this, x.operand_);
+
+      }
+      result_type operator()(expr const& e) {
+          result_type res{};
+          for (const auto& oper : e) {
+            auto x = (*this)(oper);
+            if (x.second.size() > 0) return x;
+            res.first.add(x.first);
+          }
+          return res;
+      }
+  };
 
     ///////////////////////////////////////////////////////////////////////////
     //  The AST evaluator

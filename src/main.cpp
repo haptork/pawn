@@ -13,8 +13,8 @@
 #include <pawn_ast.hpp>
 #include <pawn_grammar.hpp>
 
-std::string sanityCheck(const client::helper::ColIndices& cols) { 
-  if (cols.num.empty() && cols.str.empty()) {
+std::string sanityCheck(const std::vector<client::helper::ColIndices>& cols) { 
+  if (cols.empty() || (cols[0].num.empty() && cols[0].str.empty())) {
     return std::string{"There should be atleast one column index loaded from the file."};
   }
   return std::string{}; 
@@ -28,7 +28,7 @@ auto cookAst(std::string str) {
   typedef client::pawn::ast::expr ast_expression;
   typedef client::pawn::ast::colsEval cols_evaluator;
   //typedef client::pawn::ast::keysEval keys_evaluator;
-  typedef std::pair<ast_expression, ColIndices> resultT;
+  typedef std::pair<ast_expression, std::vector<ColIndices>> resultT;
 
   cols_evaluator cols;
   //keys_evaluator keys;
@@ -45,7 +45,7 @@ auto cookAst(std::string str) {
   if (r && iter == end) {
       auto x = cols(std::get<0>(res));
       if (x.second.size() > 0) {
-        std::cout << "Error: " << x.second << " used before declaration.\n";
+        std::cout << x.second << '\n';
         return std::make_pair(res, false);
       }
       std::string err = sanityCheck(x.first);
@@ -58,12 +58,13 @@ auto cookAst(std::string str) {
       if (k.second.size() > 0) {
         std::cout << "Error: " << k.second << " used before declaration.\n";
         return std::make_pair(res, false);
-      }
+      }std::make_pair(ColIndices{}, "Can't access column via numbers after reduce.")
       std::move(std::begin(k.first), std::end(k.first), std::back_inserter(x.first.str));
       */
-      x.first.uniq();
-      x.first.sort();
-      x.first.var = cols.variables();
+      for (auto &it : x.first) {
+        it.uniq();
+        it.sort();
+      }
       res.second = x.first;
       return std::make_pair(res, true);
   }
@@ -89,13 +90,21 @@ struct AddUnits {
   typedef client::pawn::ast::filter filterT;
   typedef client::pawn::ast::reduce reduceT;
   typedef void result_type;
+  using mevalT = client::math::ast::evaluator;
+  using levalT = client::logical::ast::evaluator;
+  using aevalT = client::reduce::ast::evaluator;
+  using ColIndices = client::helper::ColIndices;
+  using positionTeller = client::helper::positionTeller;
+
   sourceT _cur;
-  client::helper::ColIndices _indices;
-  client::helper::positionTeller _posTell;
-  client::math::ast::evaluator _meval;
-  client::logical::ast::evaluator _leval;
-  client::reduce::ast::evaluator _aeval;
+  ColIndices _indices;
+  positionTeller _posTell;
+
+  mevalT _meval;
+  levalT _leval;
+  aevalT _aeval;
   bool _isShow {false};
+  bool _wasReduce {false};
   AddUnits() : _posTell{_indices}, _meval{_posTell}, 
                _leval{_posTell}, _aeval{_posTell} { }
 
@@ -116,11 +125,26 @@ struct AddUnits {
     _cur = x.build();
   }
 
+  void columnSelect(std::vector<unsigned int> vstr) {
+    std::vector<int> keepIndices;
+    for (auto it : vstr) {
+      keepIndices.push_back(_posTell.str(it));
+    }
+    auto fn = [keepIndices](const std::vector<std::string> &s) { 
+      std::vector<std::string> res;
+      for (auto it : keepIndices) res.push_back(s[it]);
+      return std::make_tuple(res);
+    };
+    _cur = ezl::flow(_cur).map<1>(std::move(fn)).colsTransform().build();
+  }
+
   void operator()(reduceT const &r) { 
+    _wasReduce = true;
     using std::tuple; using std::vector; using std::string;
     using resT = std::tuple<std::vector<double>>&;
     using keyT = const std::vector<std::string>&;
     using rowT = const std::vector<double>&;
+    if (r.cols.size() < _indices.str.size()) columnSelect(r.cols);
     auto vf = _aeval(r.operation);
     auto fn = [vf](resT r, keyT k, rowT c) -> auto& { for (const auto &f : vf) f(r, k, c); return r; };
     auto initial = std::make_tuple(std::vector<double>(vf.size()));
@@ -135,16 +159,19 @@ struct AddUnits {
     _cur = y.build();
   }
 
-  sourceT operator()(sourceT src, client::helper::ColIndices indices, unitsT units) {
-    _indices.str = indices.str;
-    _indices.num = indices.num;
-    _indices.var = indices.var;
+  sourceT operator()(sourceT src, std::vector<ColIndices> indices, unitsT units) {
+    auto jt = std::begin(indices);
+    _indices = *jt;
     _cur = src;
     _isShow = false;
     auto i = 0;
     for (const auto &it : units) {
       if (i++ == units.size() - 1) _isShow = true;
       boost::apply_visitor(*this, it);
+      if (_wasReduce) {
+        _indices = *(++jt);
+        _wasReduce = false;
+      }
     }
     return _cur;
   }
@@ -162,10 +189,10 @@ auto readQuery(std::string line, std::vector<int> workers) {
   typedef string::const_iterator iterator_type;
   typedef client::pawn::ast::expr ast_expression;
   ast_expression expression;
-  ColIndices colIndices;
+  std::vector<ColIndices> colIndices;
   std::tie(expression, colIndices) = cookAst(line).first;
   std::string fname{expression.first.begin() + 1, expression.first.end() - 1};
-  sourceT src = getSource(fname, colIndices, workers);
+  sourceT src = getSource(fname, colIndices[0], workers);
   AddUnits addUnits;
   auto cur = addUnits(src, colIndices, expression.units);
   runFlow(cur, workers);

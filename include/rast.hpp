@@ -85,15 +85,16 @@ namespace client { namespace relational { namespace ast
 
     struct colsEval {
     private:
-      using vectorCol = std::vector<size_t>;
-      using vectorVar = std::vector<std::string>;
       using ColIndices = client::helper::ColIndices;
-      const vectorVar &_v;
+      const ColIndices &_v;
+      bool _isInitial {true};
     public:
         using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const vectorVar &v) : _v{v} {}
+        colsEval(const ColIndices &v) : _v{v} {}
+        void notInitial() { _isInitial = false; }
         result_type operator()(mathOp const& x) const {
             client::math::ast::colsEval mColsEval(_v);
+            if (!_isInitial) mColsEval.notInitial();
             auto res = mColsEval(x.lhs);
             if (res.second.size() > 0) return res;
             auto y = mColsEval(x.rhs);
@@ -103,6 +104,7 @@ namespace client { namespace relational { namespace ast
         }
         result_type operator()(strOp const& x) const {
             client::str::ast::colsEval mColsEval(_v);
+            if (!_isInitial) mColsEval.notInitial();
             auto res = mColsEval(x.lhs);
             if (res.second.size() > 0) return res;
             auto y = mColsEval(x.rhs);
