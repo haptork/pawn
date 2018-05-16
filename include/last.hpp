@@ -105,7 +105,7 @@ namespace client { namespace logical { namespace ast
         client::relational::ast::colsEval rColsEval;
     public:
         using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const ColIndices &v) : rColsEval{v} {}
+        colsEval(const ColIndices &v, const helper::Global &g) : rColsEval{v, g} {}
 
         void notInitial() { rColsEval.notInitial(); }
         result_type operator()(bool n) const { return result_type{}; }
@@ -155,7 +155,7 @@ namespace client { namespace logical { namespace ast
     public:
         using retFnT = std::function<bool(const std::vector<std::string>&, const std::vector<double>&)>;
         evaluator(client::relational::ast::evaluator reval) : _reval{reval} {}
-        evaluator(helper::positionTeller p) : _reval{p} {}
+        evaluator(helper::positionTeller p, const helper::Global &g) : _reval{p, g} {}
         typedef retFnT result_type;
 
         retFnT operator()(bool n) const { return whatever{n}; }

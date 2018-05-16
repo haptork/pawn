@@ -1,8 +1,10 @@
 #if !defined(PAWN_HELPER)
 #define PAWN_HELPER
 
+#include <algorithm>
 #include <vector>
 #include <set>
+#include <map>
 #include <string>
 
 namespace client { namespace helper {
@@ -27,6 +29,12 @@ struct ColIndices {
     std::sort(std::begin(num), std::end(num));
     std::sort(std::begin(str), std::end(str));
   }
+};
+
+struct Global {
+  std::map<std::string, std::string> gQueries;
+  std::map<std::string, std::string> gVarsS;
+  std::map<std::string, double> gVarsN;
 };
 
 class positionTeller {

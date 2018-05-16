@@ -86,14 +86,16 @@ namespace client { namespace relational { namespace ast
     struct colsEval {
     private:
       using ColIndices = client::helper::ColIndices;
+      using Global = client::helper::Global;
       const ColIndices &_v;
+      const Global &_global;
       bool _isInitial {true};
     public:
         using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const ColIndices &v) : _v{v} {}
+        colsEval(const ColIndices &v, const Global &global) : _v{v}, _global{global} {}
         void notInitial() { _isInitial = false; }
         result_type operator()(mathOp const& x) const {
-            client::math::ast::colsEval mColsEval(_v);
+            client::math::ast::colsEval mColsEval(_v, _global);
             if (!_isInitial) mColsEval.notInitial();
             auto res = mColsEval(x.lhs);
             if (res.second.size() > 0) return res;
@@ -103,7 +105,7 @@ namespace client { namespace relational { namespace ast
             return res;
         }
         result_type operator()(strOp const& x) const {
-            client::str::ast::colsEval mColsEval(_v);
+            client::str::ast::colsEval mColsEval(_v, _global);
             if (!_isInitial) mColsEval.notInitial();
             auto res = mColsEval(x.lhs);
             if (res.second.size() > 0) return res;
@@ -130,7 +132,7 @@ namespace client { namespace relational { namespace ast
         using sretFnT = client::str::ast::evaluator::retFnT;
 
         using retFnT = std::function<bool(const std::vector<std::string>&, const std::vector<double>&)>;
-        evaluator(helper::positionTeller p) : _meval{p}, _seval{p} {}
+        evaluator(helper::positionTeller p, const helper::Global &g) : _meval{p, g}, _seval{p, g} {}
         evaluator(client::math::ast::evaluator m, client::str::ast::evaluator s) : 
             _meval{m}, _seval{s} {}
         typedef retFnT result_type;

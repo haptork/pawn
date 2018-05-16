@@ -45,7 +45,22 @@ namespace client { namespace pawn { namespace parser
 
         identifier = '$' >> raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
 
-        terminal = "show";
+        strIdentifier = '%' >> raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
+
+        saveStr = '%' >> uint_ >> "as" >> strIdentifier;
+
+        saveNum = ((identifier | ('$' >> uint_)) >> "as" >> identifier);
+
+        saveVal = "saveVal" > +(saveNum | saveStr);
+
+        fileName = "show" > lexeme[*(char_)]; 
+
+        queryName = "saveQueryAs" > lexeme[(alpha | '_') > *(alnum | '_')];
+        
+        terminal = fileName
+                 | queryName
+                 | saveVal;
+
         ///////////////////////////////////////////////////////////////////////
         // Debugging and error handling and reporting support.
         BOOST_SPIRIT_DEBUG_NODES(
@@ -53,7 +68,14 @@ namespace client { namespace pawn { namespace parser
             (src)
             (quoted_string)
             (unit)
+            (reduceCols)
             (identifier)
+            (strIdentifier)
+            (saveStr)
+            (saveNum)
+            (saveVal)
+            (fileName)
+            (queryName)
             (terminal)
         );
 

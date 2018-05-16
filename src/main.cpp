@@ -20,18 +20,16 @@ std::string sanityCheck(const std::vector<client::helper::ColIndices>& cols) {
   return std::string{}; 
 }
 
-auto cookAst(std::string str) {
+auto cookAst(std::string str, const client::helper::Global &global) {
   using std::vector; using std::string; using std::tuple;
   using client::helper::ColIndices;
   typedef string::const_iterator iterator_type;
   typedef client::pawn::parser::expression<iterator_type> parser;
   typedef client::pawn::ast::expr ast_expression;
   typedef client::pawn::ast::colsEval cols_evaluator;
-  //typedef client::pawn::ast::keysEval keys_evaluator;
   typedef std::pair<ast_expression, std::vector<ColIndices>> resultT;
 
-  cols_evaluator cols;
-  //keys_evaluator keys;
+  cols_evaluator cols{global};
 
   iterator_type iter = str.begin();
   iterator_type end = str.end();
@@ -53,14 +51,6 @@ auto cookAst(std::string str) {
         std::cout << err << '\n';
         return std::make_pair(res, false);
       }
-      /*
-      auto k = keys(std::get<0>(res));
-      if (k.second.size() > 0) {
-        std::cout << "Error: " << k.second << " used before declaration.\n";
-        return std::make_pair(res, false);
-      }std::make_pair(ColIndices{}, "Can't access column via numbers after reduce.")
-      std::move(std::begin(k.first), std::end(k.first), std::back_inserter(x.first.str));
-      */
       for (auto &it : x.first) {
         it.uniq();
         it.sort();
@@ -94,6 +84,7 @@ struct AddUnits {
   using levalT = client::logical::ast::evaluator;
   using aevalT = client::reduce::ast::evaluator;
   using ColIndices = client::helper::ColIndices;
+  using Global = client::helper::Global;
   using positionTeller = client::helper::positionTeller;
 
   sourceT _cur;
@@ -105,8 +96,10 @@ struct AddUnits {
   aevalT _aeval;
   bool _isShow {false};
   bool _wasReduce {false};
-  AddUnits() : _posTell{_indices}, _meval{_posTell}, 
-               _leval{_posTell}, _aeval{_posTell} { }
+  std::string _fname;
+  bool _isDump;
+  AddUnits(std::string fn, bool isDump, const Global &g) : _posTell{_indices}, _meval{_posTell, g},
+          _leval{_posTell, g}, _aeval{_posTell}, _fname{fn}, _isDump{isDump} { }
 
   void operator()(mapT const &m) {
     auto fn = _meval(m.operation);
@@ -114,14 +107,14 @@ struct AddUnits {
       v.push_back(fn(v));
       return std::make_tuple(v);
     }).colsTransform();
-    if (_isShow) x.dump(); 
+    if (_isShow) x.dump(_fname); 
     _cur = x.build();
   }
 
   void operator()(filterT const &f) {
     auto fn = _leval(f);
     auto x = ezl::flow(_cur).filter(std::move(fn));
-    if (_isShow) x.dump(); 
+    if (_isShow) x.dump(_fname); 
     _cur = x.build();
   }
 
@@ -155,7 +148,7 @@ struct AddUnits {
     initial = std::make_tuple(std::vector<double>(vf.size()));
     auto y = x.reduce<1>(std::move(fn2), std::move(initial)).prll({0}, ezl::llmode::task);
     _aeval.sameIndex(false);
-    if (_isShow) y.dump(); 
+    if (_isShow) y.dump(_fname); 
     _cur = y.build();
   }
 
@@ -166,7 +159,7 @@ struct AddUnits {
     _isShow = false;
     auto i = 0;
     for (const auto &it : units) {
-      if (i++ == units.size() - 1) _isShow = true;
+      if (i++ == units.size() - 1) _isShow = _isDump;
       boost::apply_visitor(*this, it);
       if (_wasReduce) {
         _indices = *(++jt);
@@ -177,25 +170,106 @@ struct AddUnits {
   }
 };
 
-auto runFlow(sourceT src, std::vector<int> workers) {
-  std::vector<int> all = workers;
-  all.push_back(0);
-  ezl::flow(src).run(all);
+struct saveValHelper {
+private:
+  const dataT& _data;
+  client::helper::positionTeller _posTell;
+  client::helper::Global &_global;
+
+public:
+  saveValHelper(const dataT& data, const client::helper::ColIndices &c, 
+    client::helper::Global &g) : _data{data}, _posTell{c}, _global{g} { }
+
+  using result_type = void;
+
+  struct saveNumHelper {
+  private:
+    const dataT& _data;
+    client::helper::positionTeller _posTell;
+    client::helper::Global &_global;
+  public:
+    using result_type = double;
+    saveNumHelper(const dataT& data, const client::helper::positionTeller &c, 
+      client::helper::Global &g) : _data{data}, _posTell{c}, _global{g} { }
+
+    result_type operator()(std::string s) const {
+      return std::get<1>(_data)[_posTell.var(s)];
+    }
+
+    result_type operator()(unsigned int s) const {
+      return std::get<1>(_data)[_posTell.num(s)];
+    }
+  };
+
+  void operator()(const client::pawn::ast::saveNum& s) {
+    _global.gVarsN[s.dest] = boost::apply_visitor(saveNumHelper{_data, _posTell, _global}, s.src);
+  }
+
+  void operator()(const client::pawn::ast::saveStr &s) {
+    _global.gVarsS[s.dest] = std::get<0>(_data)[_posTell.str(s.src)];
+  }
+
+  void operator()(client::pawn::ast::saveVal const &s) {
+    for(auto& it : s) {
+      boost::apply_visitor(*this, it);
+    }
+  }
+
+  void operator()(client::pawn::ast::fileName const &s) {}
+  void operator()(client::pawn::ast::queryName const &s) {}
+};
+
+auto runFlow(sourceT src, std::vector<int> workers, bool isSaveVal,
+    const client::pawn::ast::terminal &t, const client::helper::ColIndices &c, 
+    client::helper::Global &g) {
+  workers.push_back(0);
+  if (isSaveVal) {
+    auto x = ezl::flow(src)
+      .filter([](const dataT&) { return true; })
+        .prll(workers, ezl::llmode::task | ezl::llmode::dupe)
+      .get(workers);
+    auto y = saveValHelper{x[0], c, g};
+    if (!x.empty()) boost::apply_visitor(y, t);
+  } else {
+    ezl::flow(src).run(workers);
+  }
 }
 
-auto readQuery(std::string line, std::vector<int> workers) {
+enum class terminalType : int {
+  query,
+  file,
+  val
+};
+
+struct terminalInfoVisitor {
+public:
+  using queryName = client::pawn::ast::queryName;
+  using fileName = client::pawn::ast::fileName;
+  using saveVal = client::pawn::ast::saveVal;
+  using result_type = std::pair<std::string, terminalType>;
+  result_type operator()(const queryName& q) const { return std::make_pair(q.name, terminalType::query); } 
+  result_type operator()(const fileName& f) const { return std::make_pair(f.name, terminalType::file); } 
+  result_type operator()(const saveVal& s) const { return std::make_pair("", terminalType::val); }
+};
+
+auto readQuery(std::string line, std::vector<int> workers, client::helper::Global& global) {
   using std::vector; using std::string; using std::tuple;
-  using client::helper::ColIndices;
+  using client::helper::ColIndices; using client::helper::Global;
   typedef string::const_iterator iterator_type;
   typedef client::pawn::ast::expr ast_expression;
   ast_expression expression;
   std::vector<ColIndices> colIndices;
-  std::tie(expression, colIndices) = cookAst(line).first;
+  std::tie(expression, colIndices) = cookAst(line, global).first;
+  auto terminalInfo = boost::apply_visitor(terminalInfoVisitor{}, expression.last);
+  if (terminalInfo.second == terminalType::query) {
+    global.gQueries[terminalInfo.first] = line;
+    return true;
+  }
   std::string fname{expression.first.begin() + 1, expression.first.end() - 1};
   sourceT src = getSource(fname, colIndices[0], workers);
-  AddUnits addUnits;
+  AddUnits addUnits{terminalInfo.first, true, global};
   auto cur = addUnits(src, colIndices, expression.units);
-  runFlow(cur, workers);
+  runFlow(cur, workers, terminalInfo.second == terminalType::val, expression.last, colIndices[colIndices.size() - 1], global);
   return true;
 }
 
@@ -217,22 +291,23 @@ auto pawn(int argc, char *argv[]) {
   ezl::Karta::inst().print0("\nType pawn expressions... or [q or Q] to quit");
   ezl::Karta::inst().print0("e.x.: file \"t\" | $xz = $1 + ($2 * 3) | where "
                             "($xz == 5.0 * 2 and $1 > $4 / 2) | show\n");
-  auto queryCin = [&workers]{
+  client::helper::Global global;
+  auto queryCin = [&workers, &global]{
     std::cout << "> ";
     std::string line;
     std::getline(std::cin, line);
     if (line.empty() || line[0] == 'q' || line[0] == 'Q') {
       return std::make_pair(line, false);
     }
-    auto isGood = cookAst(line).second;
+    auto isGood = cookAst(line, global).second;
     if (!isGood) line = "";
     //auto curWorkers = scheduler(workers);
     return std::make_pair(line, true);
   };
   ezl::rise(queryCin).prll({master})
-  .filter([&workers](std::string line) {
+  .filter([&workers, &global](std::string line) {
     if (line == "") return false;
-    return readQuery(line, workers);
+    return readQuery(line, workers, global);
   }).prll(1.0, ezl::llmode::task | ezl::llmode::dupe)
   .run();
 }

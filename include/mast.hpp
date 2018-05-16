@@ -116,16 +116,19 @@ namespace client { namespace math { namespace ast
     struct colsEval {
     private:
       using ColIndices = client::helper::ColIndices;
+      using Global = client::helper::Global;
       const ColIndices &_pre;
+      const Global &_global;
       bool _isInitial {true};
     public:
         using result_type = std::pair<ColIndices, std::string>;
-        colsEval(const ColIndices &v) : _pre{v} {}
+        colsEval(const ColIndices &v, const Global &g) : _pre{v}, _global{g} {}
         void notInitial() { _isInitial = false; }
         result_type operator()(nil) const { BOOST_ASSERT(0); return result_type{}; }
         result_type operator()(double n) const { return result_type{}; }
         result_type operator()(variable const &x) const {
-          auto it = std::find(begin(_pre.var), end(_pre.var), x);
+          if (_global.gVarsN.find(x) != std::end(_global.gVarsN)) return result_type{};
+          auto it = std::find(std::begin(_pre.var), std::end(_pre.var), x);
           if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
           return result_type{};
         }
@@ -168,14 +171,20 @@ namespace client { namespace math { namespace ast
     struct evaluator {
     private:
         const helper::positionTeller _index;
+        const helper::Global &_global;
     public:
         using retFnT = std::function<double(const std::vector<double>&)>;
         typedef retFnT result_type;
 
-        evaluator(helper::positionTeller p) : _index{p} {}
+        evaluator(helper::positionTeller p, const helper::Global &g) : _index{p}, _global{g} {}
         retFnT operator()(nil) const { BOOST_ASSERT(0); return whatever{0.0}; }
         retFnT operator()(double n) const { return whatever{n}; }
         retFnT operator()(variable const &x) const { 
+          auto it = _global.gVarsN.find(x);
+          if (it != std::end(_global.gVarsN)) {
+            auto y = it->second;
+            return [y](const std::vector<double> &v) { return y; };
+          }
           auto y = _index.var(x);
           return [y](const std::vector<double> &v) { return v[y]; };
         }

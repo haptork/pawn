@@ -2,9 +2,9 @@
 #include <map>
 #include <numeric>
 
+#include <helper.hpp>
 #include <rast.hpp>
 #include <rexpr.hpp>
-#include <helper.hpp>
 
 int testRelational() {
     std::cout << "/////////////////////////////////////////////////////////\n\n";
@@ -20,6 +20,7 @@ int testRelational() {
     typedef client::relational::ast::evaluator ast_evaluator;
     typedef client::helper::positionTeller posTeller;
     using client::helper::ColIndices;
+    using client::helper::Global;
 
     std::string str;
     while (std::getline(std::cin, str))
@@ -33,10 +34,11 @@ int testRelational() {
         std::vector<std::string> vars {"xyz"};
 
         ast_printer print;
+        Global g;
         ColIndices cl;
         cl.num = colIndices;
         cl.var = vars;
-        ast_evaluator eval{posTeller{cl}};
+        ast_evaluator eval{posTeller{cl}, g};
 
         std::string::const_iterator iter = str.begin();
         std::string::const_iterator end = str.end();

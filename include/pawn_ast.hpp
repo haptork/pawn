@@ -29,9 +29,13 @@ namespace client { namespace pawn { namespace ast
 
     using src = std::string;
 
-    //using map = std::string;
+    using quoted_stringT = std::string;
+
+    using identifierT = std::string;
+    using strIdentifierT = std::string;
+
     struct map {
-      std::string identifier;
+      identifierT identifier;
       mathExpr operation;
     };
 
@@ -42,12 +46,36 @@ namespace client { namespace pawn { namespace ast
       reduceExpr operation;
     };
 
-    typedef boost::variant<map , filter, reduce> unit;
+    using unit = boost::variant<map, filter, reduce>;
+
+    using numSrc = boost::variant<identifierT, uint_>;
+
+    struct saveNum {
+      numSrc src;
+      identifierT dest;
+    };
+
+    struct saveStr {
+      uint_ src;
+      identifierT dest;
+    };
+
+    struct fileName {
+      std::string name;
+    };
+
+    struct queryName {
+      std::string name;
+    };
+
+    using saveVal = std::vector<boost::variant<saveNum, saveStr>>;
+
+    using terminal = boost::variant<queryName, saveVal, fileName>;
 
     struct expr {
         src first;
         std::list<unit> units;
-        //terminal last;
+        terminal last;
     };
 
     struct printer {
@@ -80,11 +108,35 @@ namespace client { namespace pawn { namespace ast
           std::cout << " | ";
         }
 
+        void operator()(const saveNum &s) const {
+          std::cout << " saveNum to " << s.dest;
+        }
+
+        void operator()(const saveStr &s) const {
+          std::cout << " saveStr from " << s.src << " to " << s.dest;
+        }
+
+        void operator()(saveVal const &s) const {
+          std::cout << "saveVal ";
+          for(const auto& it : s) {
+            boost::apply_visitor(*this, it);
+          }
+        }
+
+        void operator()(queryName const &q) const {
+          std::cout << " saveQuery as " << q.name;
+        }
+
+        void operator()(fileName const &f) const {
+          std::cout << " saveFile as " << f.name;
+        }
+
         void operator()(expr const& x) const {
           std::cout << "file " << x.first << " | ";
           for (const auto &it : x.units) {
             boost::apply_visitor(*this, it);
           }
+          boost::apply_visitor(*this, x.last);
         }
     };
 
@@ -94,7 +146,9 @@ namespace client { namespace pawn { namespace ast
     struct colsEval {
     private:
       using ColIndices = client::helper::ColIndices;
+      using Global = client::helper::Global;
 
+      const Global &_global;
       ColIndices _pre;
       client::math::ast::colsEval _meval;
       client::logical::ast::colsEval _leval;
@@ -108,12 +162,13 @@ namespace client { namespace pawn { namespace ast
       bool _wasReduce{false};
     public:
       typedef std::pair<ColIndices, std::string> result_type;
-      colsEval() : _pre{}, _meval{_pre}, _leval{_pre}, _aeval{_pre} {}
+      colsEval(const Global &global) : _global{global}, _pre{}, _meval{_pre, _global},
+                                 _leval{_pre, _global}, _aeval{_pre} {}
 
       const auto& pre() const { return _pre; }
 
       result_type operator()(map const &m) {
-        auto it = std::find(begin(_pre.var), end(_pre.var), m.identifier);
+        auto it = std::find(std::begin(_pre.var), std::end(_pre.var), m.identifier);
         if (it != std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + m.identifier + " redeclared.");
         auto x = _meval(m.operation);
         x.first.var.push_back(m.identifier);
@@ -151,14 +206,50 @@ namespace client { namespace pawn { namespace ast
         auto x = _aeval(r.operation);
         if (_st == state::none) {
           notInitial();
-          std::copy(begin(r.cols), end(r.cols), back_inserter(x.first.str));
         }
+        std::copy(begin(r.cols), end(r.cols), back_inserter(x.first.str));
         auto err =  hitReduce(x.first);
         if (err.size() > 0) {
           return std::make_pair(ColIndices{}, err);
         }
         return x;
       }
+
+      struct terminalCheck {
+      private:
+        ColIndices& _pre;
+      public:
+        using result_type = std::string;
+        terminalCheck(ColIndices& cols) : _pre{cols} {}
+        result_type operator()(const queryName&) const { return ""; } 
+        result_type operator()(const fileName&) const { return ""; } 
+        result_type operator()(const saveVal& s) const { 
+          for(auto &it : s) {
+            auto x = boost::apply_visitor(*this, it);
+            if(x.size() > 0) return x;
+          }
+          return "";
+        }
+        result_type operator()(identifierT s) const {
+          auto it = std::find(begin(_pre.var), end(_pre.var), s);
+          if (it == std::end(_pre.var)) return "Error: $" + s + " used before declaration.";
+          return "";
+        }
+        result_type operator()(uint_ s) const {
+          auto it = std::find(begin(_pre.num), end(_pre.num), s);
+          if (it == std::end(_pre.num)) return "Error: $" + std::to_string(s) + " used before declaration.";
+          return "";
+        }
+        result_type operator()(const saveNum& s) const {
+          return boost::apply_visitor(*this, s.src);
+        }
+
+        result_type operator()(const saveStr& s) const {
+          auto it = std::find(begin(_pre.str), end(_pre.str), s.src);
+          if (it == std::end(_pre.str)) return "Error: %" + std::to_string(s.src) + " used before declaration.";
+          return "";
+        }
+      };
 
       auto operator()(expr const& x) {
         std::pair<std::vector<ColIndices>, std::string> res;
@@ -180,6 +271,7 @@ namespace client { namespace pawn { namespace ast
           }
           _pre = res.first[res.first.size() - 1];
         }
+        res.second = boost::apply_visitor(terminalCheck{_pre}, x.last);
         return res;
       }
     };
@@ -231,6 +323,11 @@ namespace client { namespace pawn { namespace ast
 }}}
 
 BOOST_FUSION_ADAPT_STRUCT(
+    client::pawn::ast::fileName,
+    (std::string, name)
+)
+
+BOOST_FUSION_ADAPT_STRUCT(
     client::pawn::ast::map,
     (std::string, identifier)
     (client::math::ast::expr, operation)
@@ -246,5 +343,24 @@ BOOST_FUSION_ADAPT_STRUCT(
     client::pawn::ast::expr,
     (std::string, first)
     (std::list<client::pawn::ast::unit>, units)
+    (client::pawn::ast::terminal, last)
 )
+
+BOOST_FUSION_ADAPT_STRUCT(
+    client::pawn::ast::saveStr,
+    (unsigned int, src)
+    (std::string, dest)
+)
+
+BOOST_FUSION_ADAPT_STRUCT(
+    client::pawn::ast::saveNum,
+    (client::pawn::ast::numSrc, src)
+    (std::string, dest)
+)
+
+BOOST_FUSION_ADAPT_STRUCT(
+    client::pawn::ast::queryName,
+    (std::string, name)
+)
+
 #endif

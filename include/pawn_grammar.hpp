@@ -26,11 +26,17 @@ namespace client { namespace pawn { namespace parser
 
         qi::rule<Iterator, ast::expr(), ascii::space_type> expr;
         qi::rule<Iterator, ast::src(), ascii::space_type> src;
-        qi::rule<Iterator, std::string(), ascii::space_type> quoted_string;
+        qi::rule<Iterator, ast::quoted_stringT(), ascii::space_type> quoted_string;
         qi::rule<Iterator, ast::unit(), ascii::space_type> unit;
-        qi::rule<Iterator, std::string(), ascii::space_type> identifier;
+        qi::rule<Iterator, ast::identifierT(), ascii::space_type> identifier;
+        qi::rule<Iterator, ast::strIdentifierT(), ascii::space_type> strIdentifier;
         qi::rule<Iterator, std::vector<unsigned int>(), ascii::space_type> reduceCols;
-        qi::rule<Iterator, ascii::space_type> terminal;
+        qi::rule<Iterator, ast::saveStr(), ascii::space_type> saveStr;
+        qi::rule<Iterator, ast::saveNum(), ascii::space_type> saveNum;
+        qi::rule<Iterator, ast::saveVal(), ascii::space_type> saveVal;
+        qi::rule<Iterator, ast::fileName(), ascii::space_type> fileName;
+        qi::rule<Iterator, ast::queryName(), ascii::space_type> queryName;
+        qi::rule<Iterator, ast::terminal(), ascii::space_type> terminal;
         client::math::parser::expression<Iterator> mathExpr;
         client::logical::parser::expression<Iterator> logicalExpr;
         client::reduce::parser::expression<Iterator> reduceExpr;

@@ -35,10 +35,12 @@ int testLogical() {
 
         ast_printer print;
         client::helper::ColIndices cl;
+        client::helper::Global g;
         cl.num = colIndices;
         cl.var = vars;
-        ast_evaluator eval{posTeller{cl}};
-        cols_evaluator cols{cl};
+        
+        ast_evaluator eval{posTeller{cl}, g};
+        cols_evaluator cols{cl, g};
 
         std::string::const_iterator iter = str.begin();
         std::string::const_iterator end = str.end();

@@ -23,8 +23,9 @@ int testPawn() {
         if (str.empty() || str[0] == 'q' || str[0] == 'Q')
             break;
 
+        client::helper::Global g;
         ast_printer print;
-        cols_evaluator cols;
+        cols_evaluator cols{g};
 
         std::string::const_iterator iter = str.begin();
         std::string::const_iterator end = str.end();
@@ -40,6 +41,7 @@ int testPawn() {
         {
             std::cout << "-------------------------\n";
             std::cout << "Parsing succeeded\n";
+            //std::cout << "The terminal type is " << expression.last.which() << '\n';
             print(expression);
             std::cout << "\n";
             auto x = cols(expression);

@@ -5,12 +5,13 @@ int testPawn();
 int testReduce();
 
 int main() {
-  return testPawn();
-/*
+ return testPawn();
+ /*
   testMath();
   testRelational();
   testLogical();
   testReduce();
+  testPawn();
   return 0;
-*/
+  */
 }

@@ -44,13 +44,16 @@ namespace client { namespace str { namespace ast
     struct colsEval {
     private:
       using ColIndices = client::helper::ColIndices;
+      using Global = client::helper::Global;
       const ColIndices &_pre;
+      const Global &_global;
       bool _isInitial {true};
     public:
       using result_type = std::pair<ColIndices, std::string>;
-      colsEval(const ColIndices &v) : _pre{v} {}
+      colsEval(const ColIndices &v, const Global &global) : _pre{v}, _global{global} {}
       void notInitial() { _isInitial = false; }
       result_type operator()(variable const &x) const { 
+        if (_global.gVarsS.find(x) != std::end(_global.gVarsS)) return result_type{};
         auto it = std::find(begin(_pre.var), end(_pre.var), x);
         if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
         return result_type{};
@@ -88,13 +91,19 @@ namespace client { namespace str { namespace ast
     struct evaluator {
     private:
         const helper::positionTeller _index;
+        const helper::Global &_global;
     public:
         using retFnT = std::function<std::string(const std::vector<std::string>&)>;
         typedef retFnT result_type;
 
-        evaluator(helper::positionTeller p) : _index{p} {}
+        evaluator(helper::positionTeller p, const helper::Global &g) : _index{p}, _global{g} {}
         retFnT operator()(quoted n) const { return whatever{n.val}; }
         retFnT operator()(variable const &x) const { 
+          auto it = _global.gVarsS.find(x);
+          if (it != std::end(_global.gVarsS)) {
+            auto y = it->second;
+            return [y](const std::vector<std::string> &v) { return y; };
+          }
           auto y = _index.var(x);
           return [y](const std::vector<std::string> &v) { return v[y]; };
         }
