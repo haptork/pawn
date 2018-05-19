@@ -1,8 +1,9 @@
 #include <algorithm>
 #include <tuple>
+#include <iostream>
+#include <assert.h>
 
 #include <helper.hpp>
-#include <assert.h>
 
 int client::helper::positionTeller::var(std::string s) const {
   auto it = std::find(begin(_cols.var), end(_cols.var), s);
@@ -20,6 +21,23 @@ int client::helper::positionTeller::num(size_t i) const {
   auto it = std::find(begin(_cols.num), end(_cols.num), i);
   // assert(it != std::end(_cols));
   return it - std::begin(_cols.num);
+}
+
+void client::helper::print(const client::helper::ColIndices &colIndices) {
+  std::cout << "cols: ";
+  std::cout << "(num: ";
+  for (auto it : colIndices.num) {
+    std::cout << it << ", ";
+  }
+  std::cout << ") (str: ";
+  for (auto it : colIndices.str) {
+    std::cout << it << ", ";
+  }
+  std::cout << ") (var: ";
+  for (auto it : colIndices.var) {
+    std::cout << it << ", ";
+  }
+  std::cout << ")";
 }
 
 bool client::helper::lexCastPawn(std::vector<std::string> &vstr,

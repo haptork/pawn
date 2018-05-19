@@ -40,7 +40,7 @@ namespace client { namespace str { namespace parser
         colIndex = '%' >> uint_;
 
         // quoted_string = raw[lexeme['"' >> +(char_ - '"') >> '"']];
-        quoted_string = '"' >> raw[lexeme[+(char_ - '"')]] >> '"';
+        quoted_string = '"' >> raw[lexeme[*(char_ - '"')]] >> '"';
         ///////////////////////////////////////////////////////////////////////
         // Debugging and error handling and reporting support.
         BOOST_SPIRIT_DEBUG_NODES(

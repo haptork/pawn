@@ -13,8 +13,8 @@
 #include <pawn_ast.hpp>
 #include <pawn_grammar.hpp>
 
-std::string sanityCheck(const std::vector<client::helper::ColIndices>& cols) { 
-  if (cols.empty() || (cols[0].num.empty() && cols[0].str.empty())) {
+std::string sanityCheck(const client::helper::ColIndices& cols) { 
+  if (cols.num.empty() && cols.str.empty()) {
     return std::string{"There should be atleast one column index loaded from the file."};
   }
   return std::string{}; 
@@ -27,7 +27,7 @@ auto cookAst(std::string str, const client::helper::Global &global) {
   typedef client::pawn::parser::expression<iterator_type> parser;
   typedef client::pawn::ast::expr ast_expression;
   typedef client::pawn::ast::colsEval cols_evaluator;
-  typedef std::pair<ast_expression, std::vector<ColIndices>> resultT;
+  typedef ast_expression resultT;
 
   cols_evaluator cols{global};
 
@@ -39,23 +39,18 @@ auto cookAst(std::string str, const client::helper::Global &global) {
   resultT res;
 
   boost::spirit::ascii::space_type space;
-  bool r = phrase_parse(iter, end, calc, space, std::get<0>(res));
+  bool r = phrase_parse(iter, end, calc, space, res);
   if (r && iter == end) {
-      auto x = cols(std::get<0>(res));
-      if (x.second.size() > 0) {
-        std::cout << x.second << '\n';
-        return std::make_pair(res, false);
-      }
-      std::string err = sanityCheck(x.first);
+      auto err = cols(res);
       if (err.size() > 0) {
         std::cout << err << '\n';
         return std::make_pair(res, false);
       }
-      for (auto &it : x.first) {
-        it.uniq();
-        it.sort();
+      err = sanityCheck(res.first.colIndices);
+      if (err.size() > 0) {
+        std::cout << err << '\n';
+        return std::make_pair(res, false);
       }
-      res.second = x.first;
       return std::make_pair(res, true);
   }
   std::string rest(iter, end);
@@ -65,9 +60,10 @@ auto cookAst(std::string str, const client::helper::Global &global) {
   return std::make_pair(res, false);
 }
 
-auto getSource(std::string inFile, client::helper::ColIndices cols, std::vector<int> workers) {
+auto getSource(client::pawn::ast::src &s, std::vector<int> workers) {
   using ezl::rise; using ezl::fromFilePawn;
-  return rise(fromFilePawn(inFile, cols.str, cols.num)).prll(workers).build();
+  std::string inFile{s.fname.begin() + 1, s.fname.end() - 1};
+  return rise(fromFilePawn(inFile, s.colIndices.str, s.colIndices.num)).prll(workers).build();
 }
 
 using dataT = std::tuple<const std::vector<std::string>&, const std::vector<double>&>;
@@ -79,6 +75,7 @@ struct AddUnits {
   typedef client::pawn::ast::map mapT;
   typedef client::pawn::ast::filter filterT;
   typedef client::pawn::ast::reduce reduceT;
+  typedef client::pawn::ast::zipExpr zipT;
   typedef void result_type;
   using mevalT = client::math::ast::evaluator;
   using levalT = client::logical::ast::evaluator;
@@ -95,7 +92,6 @@ struct AddUnits {
   levalT _leval;
   aevalT _aeval;
   bool _isShow {false};
-  bool _wasReduce {false};
   std::string _fname;
   bool _isDump;
   AddUnits(std::string fn, bool isDump, const Global &g) : _posTell{_indices}, _meval{_posTell, g},
@@ -131,8 +127,9 @@ struct AddUnits {
     _cur = ezl::flow(_cur).map<1>(std::move(fn)).colsTransform().build();
   }
 
+  void operator()(zipT const &r) { }
+
   void operator()(reduceT const &r) { 
-    _wasReduce = true;
     using std::tuple; using std::vector; using std::string;
     using resT = std::tuple<std::vector<double>>&;
     using keyT = const std::vector<std::string>&;
@@ -148,23 +145,19 @@ struct AddUnits {
     initial = std::make_tuple(std::vector<double>(vf.size()));
     auto y = x.reduce<1>(std::move(fn2), std::move(initial)).prll({0}, ezl::llmode::task);
     _aeval.sameIndex(false);
+    _indices = r.colIndices;
     if (_isShow) y.dump(_fname); 
     _cur = y.build();
   }
 
-  sourceT operator()(sourceT src, std::vector<ColIndices> indices, unitsT units) {
-    auto jt = std::begin(indices);
-    _indices = *jt;
+  sourceT operator()(sourceT src, client::pawn::ast::expr expr) {
+    _indices = expr.first.colIndices;
     _cur = src;
     _isShow = false;
     auto i = 0;
-    for (const auto &it : units) {
-      if (i++ == units.size() - 1) _isShow = _isDump;
+    for (const auto &it : expr.units) {
+      if (i++ == expr.units.size() - 1) _isShow = _isDump;
       boost::apply_visitor(*this, it);
-      if (_wasReduce) {
-        _indices = *(++jt);
-        _wasReduce = false;
-      }
     }
     return _cur;
   }
@@ -172,25 +165,24 @@ struct AddUnits {
 
 struct saveValHelper {
 private:
-  const dataT& _data;
+  const dataT _data;
   client::helper::positionTeller _posTell;
   client::helper::Global &_global;
 
 public:
-  saveValHelper(const dataT& data, const client::helper::ColIndices &c, 
+  saveValHelper(const dataT data, const client::helper::ColIndices &c, 
     client::helper::Global &g) : _data{data}, _posTell{c}, _global{g} { }
 
   using result_type = void;
 
   struct saveNumHelper {
   private:
-    const dataT& _data;
+    const dataT _data;
     client::helper::positionTeller _posTell;
-    client::helper::Global &_global;
   public:
     using result_type = double;
-    saveNumHelper(const dataT& data, const client::helper::positionTeller &c, 
-      client::helper::Global &g) : _data{data}, _posTell{c}, _global{g} { }
+    saveNumHelper(const dataT data, const client::helper::positionTeller &c) 
+      : _data{data}, _posTell{c} { }
 
     result_type operator()(std::string s) const {
       return std::get<1>(_data)[_posTell.var(s)];
@@ -202,7 +194,7 @@ public:
   };
 
   void operator()(const client::pawn::ast::saveNum& s) {
-    _global.gVarsN[s.dest] = boost::apply_visitor(saveNumHelper{_data, _posTell, _global}, s.src);
+    _global.gVarsN[s.dest] = boost::apply_visitor(saveNumHelper{_data, _posTell}, s.src);
   }
 
   void operator()(const client::pawn::ast::saveStr &s) {
@@ -220,8 +212,9 @@ public:
 };
 
 auto runFlow(sourceT src, std::vector<int> workers, bool isSaveVal,
-    const client::pawn::ast::terminal &t, const client::helper::ColIndices &c, 
-    client::helper::Global &g) {
+    const client::pawn::ast::expr &expr, client::helper::Global &g) {
+  auto &t = expr.last;
+  auto &c = expr.colIndices;
   workers.push_back(0);
   if (isSaveVal) {
     auto x = ezl::flow(src)
@@ -258,18 +251,16 @@ auto readQuery(std::string line, std::vector<int> workers, client::helper::Globa
   typedef string::const_iterator iterator_type;
   typedef client::pawn::ast::expr ast_expression;
   ast_expression expression;
-  std::vector<ColIndices> colIndices;
-  std::tie(expression, colIndices) = cookAst(line, global).first;
+  expression = cookAst(line, global).first;
   auto terminalInfo = boost::apply_visitor(terminalInfoVisitor{}, expression.last);
   if (terminalInfo.second == terminalType::query) {
     global.gQueries[terminalInfo.first] = line;
     return true;
   }
-  std::string fname{expression.first.begin() + 1, expression.first.end() - 1};
-  sourceT src = getSource(fname, colIndices[0], workers);
+  sourceT src = getSource(expression.first,  workers);
   AddUnits addUnits{terminalInfo.first, true, global};
-  auto cur = addUnits(src, colIndices, expression.units);
-  runFlow(cur, workers, terminalInfo.second == terminalType::val, expression.last, colIndices[colIndices.size() - 1], global);
+  auto cur = addUnits(src, expression);
+  runFlow(cur, workers, terminalInfo.second == terminalType::val, expression, global);
   return true;
 }
 
@@ -292,7 +283,7 @@ auto pawn(int argc, char *argv[]) {
   ezl::Karta::inst().print0("e.x.: file \"t\" | $xz = $1 + ($2 * 3) | where "
                             "($xz == 5.0 * 2 and $1 > $4 / 2) | show\n");
   client::helper::Global global;
-  auto queryCin = [&workers, &global]{
+  auto queryCin = [&global]{
     std::cout << "> ";
     std::string line;
     std::getline(std::cin, line);

@@ -47,6 +47,8 @@ private:
   const ColIndices &_cols;
 };
 
+void print(const ColIndices &colIndices);
+
 bool lexCastPawn(std::vector<std::string> &vstr,
                  std::tuple<std::vector<std::string>, std::vector<double>> &out,
                  std::vector<int> colsString, std::vector<int> colsNumeric,

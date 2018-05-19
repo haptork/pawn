@@ -42,31 +42,18 @@ int testPawn() {
             std::cout << "-------------------------\n";
             std::cout << "Parsing succeeded\n";
             //std::cout << "The terminal type is " << expression.last.which() << '\n';
-            print(expression);
-            std::cout << "\n";
             auto x = cols(expression);
-            if (x.second.size() > 0) {
-              std::cout << "Error: " << x.second << " used before declaration.\n";
+            if (x.size() > 0) {
+              std::cout << "Error: " << x << " used before declaration.\n";
             } else {
-              for (auto& it : x.first) {
+              print(expression);
+              std::cout << "\n";
+              /*
+              for (auto& it : expression.first.colIndices) {
                 it.uniq();
                 it.sort();
               }
-              for (auto& jt : x.first) {
-                std::cout << "\nnum columns are: ";
-                for (auto it : jt.num) {
-                  std::cout << it << ", ";
-                }
-                std::cout << "\nstr columns are: ";
-                for (auto it : jt.str) {
-                  std::cout << it << ", ";
-                }
-                std::cout << "\nvar are: ";
-                for (auto it : jt.var) {
-                  std::cout << it << ", ";
-                }
-                std::cout << "\n----\n";
-              }
+              */
             }
             /*
             auto e = eval(expression);

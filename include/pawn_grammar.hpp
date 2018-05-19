@@ -26,6 +26,7 @@ namespace client { namespace pawn { namespace parser
 
         qi::rule<Iterator, ast::expr(), ascii::space_type> expr;
         qi::rule<Iterator, ast::src(), ascii::space_type> src;
+        qi::rule<Iterator, ast::zipExpr(), ascii::space_type> zipExpr;
         qi::rule<Iterator, ast::quoted_stringT(), ascii::space_type> quoted_string;
         qi::rule<Iterator, ast::unit(), ascii::space_type> unit;
         qi::rule<Iterator, ast::identifierT(), ascii::space_type> identifier;

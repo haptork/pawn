@@ -31,7 +31,7 @@ namespace client { namespace pawn { namespace parser
 
         typedef function<client::error_handler<Iterator> > error_handler_function;
 
-        expr = src >> *('|' >> unit) >> '|' >> terminal;
+        expr = src >> +('|' >> unit) >> '|' >> terminal;
 
         src = "file" >> quoted_string;
 
@@ -39,7 +39,10 @@ namespace client { namespace pawn { namespace parser
 
         unit = identifier >> '=' >> mathExpr
              | "where" >> logicalExpr
-             | "reduce" >> reduceCols >> reduceExpr;
+             | "reduce" >> reduceCols >> reduceExpr
+             | "zip" >> zipExpr;
+
+        zipExpr = reduceCols >> '('  >> src >> *('|' >> unit) >> ')'; ;
         
         reduceCols = *('%' >> uint_);
 
@@ -67,6 +70,7 @@ namespace client { namespace pawn { namespace parser
             (expr)
             (src)
             (quoted_string)
+            (zipExpr)
             (unit)
             (reduceCols)
             (identifier)
