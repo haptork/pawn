@@ -62,6 +62,7 @@ struct zipExpr {
   src first;
   std::list<unit> units;
   ColIndices colIndices;
+  int zipCount;
 };
 
 using numSrc = boost::variant<identifierT, uint_>;
@@ -93,6 +94,7 @@ struct expr {
   std::list<unit> units;
   terminal last;
   ColIndices colIndices;
+  int zipCount{0};
 };
 
 struct printer {
@@ -126,6 +128,8 @@ struct printer {
       boost::apply_visitor(*this, it);
     }
     std::cout << ")";
+    client::helper::print(z.colIndices);
+    std::cout << " | ";
   }
 
   void operator()(reduce const &r) const {
@@ -173,6 +177,7 @@ struct printer {
       boost::apply_visitor(*this, it);
     }
     boost::apply_visitor(*this, x.last);
+    std::cout << "zipC: " << x.zipCount;
   }
 };
 
@@ -192,6 +197,46 @@ private:
   client::reduce::ast::colsEval _aeval;
   enum class state : int { none, first, many };
   state _st{state::none};
+  int _zipCount = 0;
+
+  struct terminalCheck {
+  private:
+    ColIndices &_pre;
+
+  public:
+    using result_type = std::string;
+    terminalCheck(ColIndices &cols) : _pre{cols} {}
+    result_type operator()(const queryName &) const { return ""; }
+    result_type operator()(const fileName &) const { return ""; }
+    result_type operator()(const saveVal &s) const {
+      for (auto &it : s) {
+        auto x = boost::apply_visitor(*this, it);
+        if (x.size() > 0) return x;
+      }
+      return "";
+    }
+    result_type operator()(identifierT s) const {
+      auto it = std::find(begin(_pre.var), end(_pre.var), s);
+      if (it == std::end(_pre.var))
+        return "Error: $" + s + " used before declaration.";
+      return "";
+    }
+    result_type operator()(uint_ s) const {
+      auto it = std::find(begin(_pre.num), end(_pre.num), s);
+      if (it == std::end(_pre.num))
+        return "Error: $" + std::to_string(s) + " used before declaration.";
+      return "";
+    }
+    result_type operator()(const saveNum &s) const {
+      return boost::apply_visitor(*this, s.src);
+    }
+    result_type operator()(const saveStr &s) const {
+      auto it = std::find(begin(_pre.str), end(_pre.str), s.src);
+      if (it == std::end(_pre.str))
+        return "Error: %" + std::to_string(s.src) + " used before declaration.";
+      return "";
+    }
+  };
 
 public:
   typedef std::string result_type;
@@ -239,10 +284,30 @@ public:
 
   result_type operator()(reduce &r) {
     std::string err;
-    *_pre = _cur;
+    *_pre = _cur; // value of what pre was pointing to is changed
     std::tie(_cur, err) = _aeval(r.operation);
     if (err.size() > 0) return err;
     std::copy(begin(r.cols), end(r.cols), std::back_inserter(_cur.str));
+    err = hitReduce(_cur);
+    if (err.size() > 0) return err;
+    if (_st == state::first) {
+      std::copy(begin(_cur.str), end(_cur.str), back_inserter(_pre->str));
+      std::copy(begin(_cur.num), end(_cur.num), back_inserter(_pre->num));
+    }
+    _cur.num.clear();
+    _pre->uniq();
+    _pre->sort();
+    _pre = &(r.colIndices);
+    return err;
+  }
+
+  result_type operator()(zipExpr &r) {
+    *_pre = _cur;
+    std::string err = colsEval{_global}.zipInternal(r);
+    _zipCount = r.zipCount + 1;
+    if (err.size() > 0) return err;
+    // std::copy(begin(r.cols), end(r.cols), std::back_inserter(_cur.str));
+    // check if x.cols exist in _pre if _pre is first
     err = hitReduce(_cur);
     if (err.size() > 0) return err;
     if (_st == state::first) {
@@ -251,74 +316,33 @@ public:
     _pre->uniq();
     _pre->sort();
     _pre = &(r.colIndices);
-    return err;
-  }
-
-  result_type operator()(zipExpr &z) {
-    /*
-        std::pair<std::vector<ColIndices>, std::string> res;
-        res.first.emplace_back();
-        for (const auto &it : x.units) {
-          auto x = boost::apply_visitor(*this, it);
-          if (x.second.size() > 0) {
-            res.second = x.second;
-            return res;
-          }
-            if (_st == state::first) {
-              std::copy(begin(x.first.str), end(x.first.str),
-       back_inserter(res.first[0].str));
-            }
-            res.first.push_back(x.first);
-          } else {
-            res.first[res.first.size() - 1].add(x.first);
-          }
-          _cur = res.first[res.first.size() - 1];
-        }
-        res.second = boost::apply_visitor(terminalCheck{_cur}, x.last);
-        return res;
-        */
+    char ch1 = (int)'a' + 2*(_zipCount - 1);
+    char ch2 = ch1 + 1;
+    auto nm1 = std::string{ch1};
+    auto nm2 = std::string{ch2};
+    for (auto it : _cur.num) {
+      _cur.var.push_back(std::to_string(it) + nm1);
+    }
+    for (auto it : r.colIndices.num) {
+      _cur.var.push_back(std::to_string(it) + nm2);
+    }
+    _cur.num.clear();
+    std::copy(begin(r.colIndices.var), end(r.colIndices.var), back_inserter(_cur.var));
     return result_type{};
   }
 
-  struct terminalCheck {
-  private:
-    ColIndices &_pre;
-
-  public:
-    using result_type = std::string;
-    terminalCheck(ColIndices &cols) : _pre{cols} {}
-    result_type operator()(const queryName &) const { return ""; }
-    result_type operator()(const fileName &) const { return ""; }
-    result_type operator()(const saveVal &s) const {
-      for (auto &it : s) {
-        auto x = boost::apply_visitor(*this, it);
-        if (x.size() > 0) return x;
-      }
-      return "";
+  result_type zipInternal(zipExpr &x) {
+    _pre = &x.first.colIndices;
+    std::copy(begin(x.cols), end(x.cols), std::back_inserter(_cur.str));
+    for (auto &it : x.units) {
+      auto x = boost::apply_visitor(*this, it);
+      if (x.size() > 0) return x;
     }
-    result_type operator()(identifierT s) const {
-      auto it = std::find(begin(_pre.var), end(_pre.var), s);
-      if (it == std::end(_pre.var))
-        return "Error: $" + s + " used before declaration.";
-      return "";
-    }
-    result_type operator()(uint_ s) const {
-      auto it = std::find(begin(_pre.num), end(_pre.num), s);
-      if (it == std::end(_pre.num))
-        return "Error: $" + std::to_string(s) + " used before declaration.";
-      return "";
-    }
-    result_type operator()(const saveNum &s) const {
-      return boost::apply_visitor(*this, s.src);
-    }
-
-    result_type operator()(const saveStr &s) const {
-      auto it = std::find(begin(_pre.str), end(_pre.str), s.src);
-      if (it == std::end(_pre.str))
-        return "Error: %" + std::to_string(s.src) + " used before declaration.";
-      return "";
-    }
-  };
+    *_pre = _cur;
+    x.colIndices = _cur;
+    x.zipCount = _zipCount;
+    return "";
+  }
 
   auto operator()(expr &x) {
     _pre = &x.first.colIndices;
@@ -328,6 +352,7 @@ public:
     }
     *_pre = _cur;
     x.colIndices = _cur;
+    x.zipCount = _zipCount;
     return boost::apply_visitor(terminalCheck{_cur}, x.last);
   }
 };

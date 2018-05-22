@@ -13,6 +13,13 @@
 #include <pawn_ast.hpp>
 #include <pawn_grammar.hpp>
 
+using dataT = std::tuple<const std::vector<std::string>&, const std::vector<double>&>;
+using sourceT = std::shared_ptr<ezl::Source<dataT>>;
+
+std::vector<sourceT> sources;
+
+sourceT internalZip(client::pawn::ast::zipExpr&, std::vector<int> workers, client::helper::Global &global);
+
 std::string sanityCheck(const client::helper::ColIndices& cols) { 
   if (cols.num.empty() && cols.str.empty()) {
     return std::string{"There should be atleast one column index loaded from the file."};
@@ -66,9 +73,6 @@ auto getSource(client::pawn::ast::src &s, std::vector<int> workers) {
   return rise(fromFilePawn(inFile, s.colIndices.str, s.colIndices.num)).prll(workers).build();
 }
 
-using dataT = std::tuple<const std::vector<std::string>&, const std::vector<double>&>;
-using sourceT = std::shared_ptr<ezl::Source<dataT>>;
-
 struct AddUnits {
   typedef std::list<client::pawn::ast::unit> unitsT;
   typedef client::relational::ast::evaluator revalT;
@@ -94,8 +98,10 @@ struct AddUnits {
   bool _isShow {false};
   std::string _fname;
   bool _isDump;
-  AddUnits(std::string fn, bool isDump, const Global &g) : _posTell{_indices}, _meval{_posTell, g},
-          _leval{_posTell, g}, _aeval{_posTell}, _fname{fn}, _isDump{isDump} { }
+  std::vector<int> _workers;
+  Global &_global;
+  AddUnits(std::string fn, bool isDump, std::vector<int> workers, Global &g) : _posTell{_indices}, _meval{_posTell, g},
+          _leval{_posTell, g}, _aeval{_posTell}, _fname{fn}, _isDump{isDump}, _workers{workers}, _global{g} { }
 
   void operator()(mapT const &m) {
     auto fn = _meval(m.operation);
@@ -127,7 +133,22 @@ struct AddUnits {
     _cur = ezl::flow(_cur).map<1>(std::move(fn)).colsTransform().build();
   }
 
-  void operator()(zipT const &r) { }
+  void operator()(zipT &r) { 
+    using std::tuple; using std::vector; using std::string;
+    using resT = std::tuple<std::vector<double>>&;
+    using keyT = const std::vector<std::string>&;
+    using rowT = const std::vector<double>&;
+    if (r.cols.size() < _indices.str.size()) columnSelect(r.cols);
+    auto fl = internalZip(r, _workers, _global);
+    auto x = ezl::flow(_cur).zip<1>(std::move(fl)).prll({0}, ezl::llmode::task).colsDrop<3>()
+               .map<2, 3>([](std::vector<double> v1, std::vector<double> v2) {
+                 std::move(begin(v2), end(v2), std::back_inserter(v1));
+                 return std::make_tuple(v1);
+               }).colsTransform();
+    _indices = r.colIndices;
+    if (_isShow) x.dump(_fname); 
+    _cur = x.build();
+  }
 
   void operator()(reduceT const &r) { 
     using std::tuple; using std::vector; using std::string;
@@ -150,13 +171,13 @@ struct AddUnits {
     _cur = y.build();
   }
 
-  sourceT operator()(sourceT src, client::pawn::ast::expr expr) {
-    _indices = expr.first.colIndices;
+  sourceT operator()(sourceT &src, client::helper::ColIndices &colIndices, std::list<client::pawn::ast::unit>& units) {
+    _indices = colIndices;
     _cur = src;
     _isShow = false;
     auto i = 0;
-    for (const auto &it : expr.units) {
-      if (i++ == expr.units.size() - 1) _isShow = _isDump;
+    for (auto &it : units) {
+      if (i++ == units.size() - 1) _isShow = _isDump;
       boost::apply_visitor(*this, it);
     }
     return _cur;
@@ -245,6 +266,14 @@ public:
   result_type operator()(const saveVal& s) const { return std::make_pair("", terminalType::val); }
 };
 
+sourceT internalZip(client::pawn::ast::zipExpr &expression, std::vector<int> workers, client::helper::Global &global) {
+  sourceT src = getSource(expression.first,  workers);
+  sources.push_back(src);
+  AddUnits addUnits{"", false, workers, global};
+  auto cur = addUnits(src, expression.first.colIndices, expression.units);
+  return cur;
+}
+
 auto readQuery(std::string line, std::vector<int> workers, client::helper::Global& global) {
   using std::vector; using std::string; using std::tuple;
   using client::helper::ColIndices; using client::helper::Global;
@@ -257,10 +286,11 @@ auto readQuery(std::string line, std::vector<int> workers, client::helper::Globa
     global.gQueries[terminalInfo.first] = line;
     return true;
   }
-  sourceT src = getSource(expression.first,  workers);
-  AddUnits addUnits{terminalInfo.first, true, global};
-  auto cur = addUnits(src, expression);
+  sourceT src = getSource(expression.first, workers);
+  AddUnits addUnits{terminalInfo.first, true, workers, global};
+  auto cur = addUnits(src, expression.first.colIndices, expression.units);
   runFlow(cur, workers, terminalInfo.second == terminalType::val, expression, global);
+  sources.clear();
   return true;
 }
 

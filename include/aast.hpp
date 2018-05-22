@@ -81,19 +81,17 @@ namespace client { namespace reduce { namespace ast
       result_type operator()(column const &x) { 
         if (!_isInitial) return std::make_pair(ColIndices{}, "Can't access number columns via column index after reduce.");
         ColIndices res;
-        //res.num.push_back(x);
+        res.num.push_back(x);
         res.var.push_back(_nm + "_" + std::to_string(x));
         return std::make_pair(res, "");
       }
       std::string _nm;
       result_type operator()(operation const& x) {
-          switch (x.operator_)
-          {
+          switch (x.operator_) {
               case optoken::sum: _nm = std::string{"sum"}; break;
               case optoken::max: _nm = std::string{"max"};
           }
           return boost::apply_visitor(*this, x.operand_);
-
       }
       result_type operator()(expr const& e) {
           result_type res{};
