@@ -30,8 +30,8 @@ namespace client { namespace pawn { namespace parser
         qi::rule<Iterator, ast::quoted_stringT(), ascii::space_type> quoted_string;
         qi::rule<Iterator, ast::unit(), ascii::space_type> unit;
         qi::rule<Iterator, ast::identifierT(), ascii::space_type> identifier;
-        qi::rule<Iterator, ast::strIdentifierT(), ascii::space_type> strIdentifier;
-        qi::rule<Iterator, std::vector<unsigned int>(), ascii::space_type> reduceCols;
+        qi::rule<Iterator, ast::strOperand(), ascii::space_type> strOperand;
+        qi::rule<Iterator, std::vector<ast::strOperand>(), ascii::space_type> reduceCols;
         qi::rule<Iterator, ast::saveStr(), ascii::space_type> saveStr;
         qi::rule<Iterator, ast::saveNum(), ascii::space_type> saveNum;
         qi::rule<Iterator, ast::saveVal(), ascii::space_type> saveVal;

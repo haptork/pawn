@@ -1,14 +1,22 @@
 #include <algorithm>
 #include <tuple>
 #include <iostream>
+#include <fstream>
 #include <assert.h>
+
 
 #include <helper.hpp>
 
 int client::helper::positionTeller::var(std::string s) const {
   auto it = std::find(begin(_cols.var), end(_cols.var), s);
   // assert(it != std::end(_vars));
-  return _cols.num.size() + (it - std::begin(_cols.var));
+  return /*_cols.num.size() + */(it - std::begin(_cols.var));
+}
+
+int client::helper::positionTeller::varStr(std::string s) const {
+  auto it = std::find(begin(_cols.varStr), end(_cols.varStr), s);
+  // assert(it != std::end(_vars));
+  return /*_cols.num.size() + */(it - std::begin(_cols.varStr));
 }
 
 int client::helper::positionTeller::str(size_t i) const {
@@ -37,7 +45,53 @@ void client::helper::print(const client::helper::ColIndices &colIndices) {
   for (auto it : colIndices.var) {
     std::cout << it << ", ";
   }
+  std::cout << ") (varStr: ";
+  for (auto it : colIndices.varStr) {
+    std::cout << it << ", ";
+  }
   std::cout << ")";
+}
+
+std::vector<std::string> client::helper::headerCols(std::string fnameGlob) {
+  auto fnames = ezl::detail::vglob(fnameGlob, 1);
+  if (fnames.empty()) return std::vector<std::string>{};
+  std::ifstream f(fnames[0]);
+  const char rDelim = '\n';
+  const std::string cDelims {" "};
+  std::vector<std::string> headers;
+  if(f.is_open()) {
+    std::string line;
+    std::getline(f, line, rDelim);
+    boost::split(headers, line, boost::is_any_of(cDelims),
+                 boost::token_compress_on);
+  }
+  return headers;
+}
+
+void client::helper::processHeader(client::helper::ColIndices &x, std::vector<std::string>& h) {
+  std::vector<std::string> res;
+  for (auto i : x.num) {
+    auto it = i - 1;
+    if (it < h.size() && !h[it].empty() && !std::isdigit(h[it][0])) res.push_back(h[it]);
+    else res.push_back("-");
+  }
+  std::move(begin(x.var), end(x.var), std::back_inserter(res));
+  x.var = std::move(res);
+  res.clear();
+  for (auto i : x.str) {
+    auto it = i - 1;
+    if (it < h.size() && !h[it].empty() && !std::isdigit(h[it][0])) res.push_back(h[it]);
+    else res.push_back("-");
+  }
+  std::move(begin(x.varStr), end(x.varStr), std::back_inserter(res));
+  x.varStr = std::move(res);
+}
+
+std::string client::helper::cookDumpHeader(const client::helper::ColIndices& h) {
+  std::string res;
+  for (const auto &it : h.varStr) res += it + "\t";
+  for (const auto &it : h.var) res += it + "\t";
+  return res;
 }
 
 bool client::helper::lexCastPawn(std::vector<std::string> &vstr,

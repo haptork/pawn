@@ -67,22 +67,26 @@ namespace client { namespace reduce { namespace ast
       using ColIndices = client::helper::ColIndices;
       const ColIndices &_pre;
       bool _isInitial {true};
+      std::vector<std::string> _headers;
     public:
       using result_type = std::pair<ColIndices, std::string>;
       colsEval(const ColIndices &v) : _pre{v} {}
+      void setHeaders(const std::vector<std::string>& h) { _headers = h; }
       void notInitial() { _isInitial = false; }
       result_type operator()(variable const &x) { 
+        auto jt = std::find(begin(_headers), end(_headers), x);
+        if (jt != std::end(_headers)) return (*this)((unsigned int)(jt - std::begin(_headers)) + 1, x);
         auto it = std::find(begin(_pre.var), end(_pre.var), x);
         if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
         ColIndices res;
         res.var.push_back(_nm + "_" + x);
         return std::make_pair(res, "");
       }
-      result_type operator()(column const &x) { 
+      result_type operator()(column const &x, std::string colName = "") { 
         if (!_isInitial) return std::make_pair(ColIndices{}, "Can't access number columns via column index after reduce.");
         ColIndices res;
         res.num.push_back(x);
-        res.var.push_back(_nm + "_" + std::to_string(x));
+        res.var.push_back(_nm + "_" + ((colName.size() > 0) ? colName : std::to_string(x)));
         return std::make_pair(res, "");
       }
       std::string _nm;

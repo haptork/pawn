@@ -90,12 +90,15 @@ namespace client { namespace relational { namespace ast
       const ColIndices &_v;
       const Global &_global;
       bool _isInitial {true};
+      std::vector<std::string> _headers;
     public:
         using result_type = std::pair<ColIndices, std::string>;
         colsEval(const ColIndices &v, const Global &global) : _v{v}, _global{global} {}
+        void setHeaders(const std::vector<std::string>& h) { _headers = h; }
         void notInitial() { _isInitial = false; }
         result_type operator()(mathOp const& x) const {
             client::math::ast::colsEval mColsEval(_v, _global);
+            mColsEval.setHeaders(_headers);
             if (!_isInitial) mColsEval.notInitial();
             auto res = mColsEval(x.lhs);
             if (res.second.size() > 0) return res;
@@ -106,6 +109,7 @@ namespace client { namespace relational { namespace ast
         }
         result_type operator()(strOp const& x) const {
             client::str::ast::colsEval mColsEval(_v, _global);
+            mColsEval.setHeaders(_headers);
             if (!_isInitial) mColsEval.notInitial();
             auto res = mColsEval(x.lhs);
             if (res.second.size() > 0) return res;

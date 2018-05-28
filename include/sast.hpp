@@ -48,14 +48,18 @@ namespace client { namespace str { namespace ast
       const ColIndices &_pre;
       const Global &_global;
       bool _isInitial {true};
+      std::vector<std::string> _headers;
     public:
       using result_type = std::pair<ColIndices, std::string>;
       colsEval(const ColIndices &v, const Global &global) : _pre{v}, _global{global} {}
+      void setHeaders(const std::vector<std::string>& h) { _headers = h; }
       void notInitial() { _isInitial = false; }
       result_type operator()(variable const &x) const { 
         if (_global.gVarsS.find(x) != std::end(_global.gVarsS)) return result_type{};
-        auto it = std::find(begin(_pre.var), end(_pre.var), x);
-        if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
+        auto jt = std::find(begin(_headers), end(_headers), x);
+        if (jt != std::end(_headers)) return (*this)((unsigned int)(jt - std::begin(_headers)) + 1);
+        auto it = std::find(begin(_pre.varStr), end(_pre.varStr), x);
+        if (it == std::end(_pre.varStr)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
         return result_type{};
       }
       result_type operator()(column const &x) const { 
@@ -104,7 +108,7 @@ namespace client { namespace str { namespace ast
             auto y = it->second;
             return [y](const std::vector<std::string> &v) { return y; };
           }
-          auto y = _index.var(x);
+          auto y = _index.varStr(x);
           return [y](const std::vector<std::string> &v) { return v[y]; };
         }
         retFnT operator()(column const &x) const { 

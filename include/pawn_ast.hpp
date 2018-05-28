@@ -12,6 +12,7 @@
 #include <boost/fusion/include/io.hpp>
 #include <boost/optional.hpp>
 #include <boost/variant/recursive_variant.hpp>
+
 #include <list>
 #include <map>
 
@@ -32,12 +33,13 @@ using reduceExpr = client::reduce::ast::expr;
 struct src {
   std::string fname;
   ColIndices colIndices;
+  int index;
 };
 
 using quoted_stringT = std::string;
 
 using identifierT = std::string;
-using strIdentifierT = std::string;
+using strOperand = boost::variant<identifierT, unsigned int>;
 
 struct map {
   identifierT identifier;
@@ -47,7 +49,7 @@ struct map {
 using filter = logicalExpr;
 
 struct reduce {
-  std::vector<uint_> cols;
+  std::vector<strOperand> cols;
   reduceExpr operation;
   ColIndices colIndices;
 };
@@ -58,7 +60,7 @@ using unit =
     boost::variant<map, filter, reduce, boost::recursive_wrapper<zipExpr>>;
 
 struct zipExpr {
-  std::vector<uint_> cols;
+  std::vector<strOperand> cols;
   src first;
   std::list<unit> units;
   ColIndices colIndices;
@@ -73,7 +75,7 @@ struct saveNum {
 };
 
 struct saveStr {
-  uint_ src;
+  strOperand src;
   identifierT dest;
 };
 
@@ -114,16 +116,27 @@ struct printer {
     std::cout << " | ";
   }
 
+  struct printStrOperand {
+    using result_type = void;
+    result_type operator()(const std::string &x) const {
+      std::cout << x;
+    }
+    result_type operator()(const unsigned int &x) const {
+      std::cout << x;
+    }
+  };
+
   void operator()(zipExpr const &z) const {
     std::cout << "zip ";
     if (!z.cols.empty()) {
       std::cout << "group by ";
-      for (auto it : z.cols) {
-        std::cout << it << ", ";
+      for (auto& it : z.cols) {
+        boost::apply_visitor(printStrOperand{}, it);
       }
     }
     std::cout << "(";
-    std::cout << "file " << z.first.fname << " | ";
+    std::cout << z.first.index << ": file " << z.first.fname << " | ";
+    client::helper::print(z.first.colIndices);
     for (const auto &it : z.units) {
       boost::apply_visitor(*this, it);
     }
@@ -138,8 +151,9 @@ struct printer {
     reducePrint(r.operation);
     if (!r.cols.empty()) {
       std::cout << " group by ";
-      for (auto it : r.cols) {
-        std::cout << it << ", ";
+      for (auto& it : r.cols) {
+        boost::apply_visitor(printStrOperand{}, it);
+        std::cout << ", ";
       }
     }
     client::helper::print(r.colIndices);
@@ -147,11 +161,15 @@ struct printer {
   }
 
   void operator()(const saveNum &s) const {
-    std::cout << " saveNum to " << s.dest;
+    std::cout << " saveNum from ";
+    boost::apply_visitor(printStrOperand{}, s.src);
+    std::cout << " to " << s.dest;
   }
 
   void operator()(const saveStr &s) const {
-    std::cout << " saveStr from " << s.src << " to " << s.dest;
+    std::cout << " saveStr from ";
+    boost::apply_visitor(printStrOperand{}, s.src);
+    std::cout << " to " << s.dest;
   }
 
   void operator()(saveVal const &s) const {
@@ -171,7 +189,7 @@ struct printer {
   }
 
   void operator()(expr const &x) const {
-    std::cout << "file " << x.first.fname << " | ";
+    std::cout << x.first.index << ": file " << x.first.fname << " | ";
     client::helper::print(x.first.colIndices);
     for (const auto &it : x.units) {
       boost::apply_visitor(*this, it);
@@ -182,7 +200,7 @@ struct printer {
 };
 
 ///////////////////////////////////////////////////////////////////////////
-//  The numerical cols evaluator
+//  The cols evaluator
 ///////////////////////////////////////////////////////////////////////////
 struct colsEval {
 private:
@@ -198,45 +216,105 @@ private:
   enum class state : int { none, first, many };
   state _st{state::none};
   int _zipCount = 0;
+  std::vector<std::string> _headers;
+
+  struct colsOperand {
+    using result_type = std::pair<unsigned int, std::string>;
+    const std::vector<std::string>& _headers;
+    const std::vector<std::string>& _vars;
+    colsOperand(const std::vector<std::string>& headers, const std::vector<std::string>& vars) : _headers{headers}, _vars{vars} {}
+    result_type operator()(const std::string &var) const {
+      auto jt = std::find(begin(_headers), end(_headers), var);
+      if (jt != std::end(_headers)) return (*this)((unsigned int)(jt - std::begin(_headers)) + 1);
+      auto it = std::find(begin(_vars), end(_vars), var);
+      if (it == std::end(_vars)) return std::make_pair(0, "Error: " + var + " used before declaration.");
+      return std::make_pair(0, "");
+    }
+    result_type operator()(unsigned int col) const { return std::make_pair(col, ""); }
+  };
+
+  struct chekStrOperand {
+    using result_type = std::pair<unsigned int, std::string>;
+    const ColIndices& _pre;
+    const std::vector<std::string>& _headers;
+    chekStrOperand(const ColIndices& pre, const std::vector<std::string>& headers) : _pre{pre}, _headers{headers} {}
+    result_type operator()(const std::string &var) const {
+      auto jt = std::find(begin(_headers), end(_headers), var);
+      if (jt != std::end(_headers)) return (*this)((unsigned int)(jt - std::begin(_headers)) + 1);
+      auto it = std::find(begin(_pre.varStr), end(_pre.varStr), var);
+      if (it == std::end(_pre.varStr)) return std::make_pair(0, "Error: %" + var + " used before declaration.");
+      return std::make_pair(0, "");
+    }
+    result_type operator()(unsigned int col) const { 
+      auto it = std::find(begin(_pre.str), end(_pre.str), col);
+      if (it == std::end(_pre.str)) return std::make_pair(0, "Error: %" + std::to_string(col) + " used before declaration.");
+      return std::make_pair(col, ""); 
+    }
+  };
+
+  struct chekNumOperand {
+    using result_type = std::pair<unsigned int, std::string>;
+    const ColIndices& _pre;
+    const std::vector<std::string>& _headers;
+    chekNumOperand(const ColIndices& pre, const std::vector<std::string>& headers) : _pre{pre}, _headers{headers} {}
+    result_type operator()(const std::string &var) const {
+      auto jt = std::find(begin(_headers), end(_headers), var);
+      if (jt != std::end(_headers)) return (*this)((unsigned int)(jt - std::begin(_headers)) + 1);
+      auto it = std::find(begin(_pre.var), end(_pre.var), var);
+      if (it == std::end(_pre.var)) return std::make_pair(0, "Error: %" + var + " used before declaration.");
+      return std::make_pair(0, "");
+    }
+    result_type operator()(unsigned int col) const { 
+      auto it = std::find(begin(_pre.num), end(_pre.num), col);
+      if (it == std::end(_pre.num)) return std::make_pair(0, "Error: %" + std::to_string(col) + " used before declaration.");
+      return std::make_pair(col, ""); 
+    }
+  };
 
   struct terminalCheck {
   private:
     ColIndices &_pre;
-
+    const std::vector<std::string>& _headers;
+    bool _isInitial;
   public:
-    using result_type = std::string;
-    terminalCheck(ColIndices &cols) : _pre{cols} {}
-    result_type operator()(const queryName &) const { return ""; }
-    result_type operator()(const fileName &) const { return ""; }
+    using result_type = std::pair<ColIndices, std::string>;
+    terminalCheck(ColIndices &cols, const std::vector<std::string>& headers, bool isInitial) 
+        : _pre{cols}, _headers{headers}, _isInitial{isInitial} {}
+    result_type operator()(const queryName &) const { return result_type{}; }
+    result_type operator()(const fileName &) const { return result_type{}; }
     result_type operator()(const saveVal &s) const {
+      ColIndices res;
       for (auto &it : s) {
         auto x = boost::apply_visitor(*this, it);
-        if (x.size() > 0) return x;
+        if (x.second.size() > 0) return x;
+        res.add(x.first);
       }
-      return "";
-    }
-    result_type operator()(identifierT s) const {
-      auto it = std::find(begin(_pre.var), end(_pre.var), s);
-      if (it == std::end(_pre.var))
-        return "Error: $" + s + " used before declaration.";
-      return "";
-    }
-    result_type operator()(uint_ s) const {
-      auto it = std::find(begin(_pre.num), end(_pre.num), s);
-      if (it == std::end(_pre.num))
-        return "Error: $" + std::to_string(s) + " used before declaration.";
-      return "";
+      return std::make_pair(res, "");
     }
     result_type operator()(const saveNum &s) const {
-      return boost::apply_visitor(*this, s.src);
+      ColIndices res;
+      if (_isInitial) {
+        auto x = boost::apply_visitor(colsOperand{_headers, _pre.var}, s.src);
+        if (x.second.size() > 0) return std::make_pair(res, x.second);
+        if (x.first) res.num.push_back(x.first);
+        return std::make_pair(res, "");
+      }
+      auto x = boost::apply_visitor(chekNumOperand{_pre, _headers}, s.src);
+      return std::make_pair(res, x.second);
     }
     result_type operator()(const saveStr &s) const {
-      auto it = std::find(begin(_pre.str), end(_pre.str), s.src);
-      if (it == std::end(_pre.str))
-        return "Error: %" + std::to_string(s.src) + " used before declaration.";
-      return "";
+      ColIndices res;
+      if (_isInitial) {
+        auto x = boost::apply_visitor(colsOperand{_headers, _pre.varStr}, s.src);
+        if (x.second.size() > 0) return std::make_pair(res, x.second);
+        if (x.first) res.str.push_back(x.first);
+        return std::make_pair(res, "");
+      }
+      auto x = boost::apply_visitor(chekStrOperand{_pre, _headers}, s.src);
+      return std::make_pair(res, x.second);
     }
   };
+
 
 public:
   typedef std::string result_type;
@@ -247,6 +325,10 @@ public:
   result_type operator()(map const &m) {
     auto i = std::find(std::begin(_cur.var), std::end(_cur.var), m.identifier);
     if (i != std::end(_cur.var)) return "Err: " + m.identifier + " redeclared.";
+    auto j = _global.gVarsN.find(m.identifier);
+    if (j != std::end(_global.gVarsN)) return "Err: " + m.identifier + " is already used in global vars.";
+    auto k = std::find(std::begin(_headers), std::end(_headers), m.identifier);
+    if (k != std::end(_headers)) return "Err: " + m.identifier + " is also present in input column headers.";
     auto x = _meval(m.operation);
     _cur.add(x.first);
     _cur.var.push_back(m.identifier);
@@ -281,13 +363,18 @@ public:
     _leval.notInitial();
     _aeval.notInitial();
   }
+  
 
   result_type operator()(reduce &r) {
     std::string err;
     *_pre = _cur; // value of what pre was pointing to is changed
     std::tie(_cur, err) = _aeval(r.operation);
     if (err.size() > 0) return err;
-    std::copy(begin(r.cols), end(r.cols), std::back_inserter(_cur.str));
+    for (auto& it : r.cols) {
+      auto colNumErr = boost::apply_visitor(colsOperand{_headers, _pre->varStr}, it);
+      if (colNumErr.second.size() > 0) return colNumErr.second;
+      _cur.str.push_back(colNumErr.first);
+    }
     err = hitReduce(_cur);
     if (err.size() > 0) return err;
     if (_st == state::first) {
@@ -297,15 +384,22 @@ public:
     _cur.num.clear();
     _pre->uniq();
     _pre->sort();
+    helper::processHeader(*_pre, _headers);
     _pre = &(r.colIndices);
     return err;
   }
 
   result_type operator()(zipExpr &r) {
     *_pre = _cur;
-    std::string err = colsEval{_global}.zipInternal(r);
-    _zipCount = r.zipCount + 1;
+    _zipCount += 1;
+    std::string err = colsEval{_global}.zipInternal(r, _zipCount);
+    _zipCount = r.zipCount;
     if (err.size() > 0) return err;
+    for (auto& it : r.cols) {
+      auto colNumErr = boost::apply_visitor(colsOperand{_headers, _pre->varStr}, it);
+      if (colNumErr.second.size() > 0) return colNumErr.second;
+      _cur.str.push_back(colNumErr.first);
+    }
     // std::copy(begin(r.cols), end(r.cols), std::back_inserter(_cur.str));
     // check if x.cols exist in _pre if _pre is first
     err = hitReduce(_cur);
@@ -315,29 +409,47 @@ public:
     }
     _pre->uniq();
     _pre->sort();
+    helper::processHeader(*_pre, _headers);
     _pre = &(r.colIndices);
     char ch1 = (int)'a' + 2*(_zipCount - 1);
     char ch2 = ch1 + 1;
     auto nm1 = std::string{ch1};
     auto nm2 = std::string{ch2};
+    std::vector<std::string> temp;
     for (auto it : _cur.num) {
-      _cur.var.push_back(std::to_string(it) + nm1);
+      temp.push_back(std::to_string(it) + nm1);
     }
+    std::move(begin(_cur.var), end(_cur.var), back_inserter(temp));
     for (auto it : r.colIndices.num) {
-      _cur.var.push_back(std::to_string(it) + nm2);
+      temp.push_back(std::to_string(it) + nm2);
     }
     _cur.num.clear();
+    _cur.var = std::move(temp);
     std::copy(begin(r.colIndices.var), end(r.colIndices.var), back_inserter(_cur.var));
     return result_type{};
   }
 
-  result_type zipInternal(zipExpr &x) {
+  result_type zipInternal(zipExpr &x, int zCount) {
     _pre = &x.first.colIndices;
-    std::copy(begin(x.cols), end(x.cols), std::back_inserter(_cur.str));
+    std::string inFile{x.first.fname.begin() + 1, x.first.fname.end() - 1};
+    _headers = helper::headerCols(inFile);
+    _meval.setHeaders(_headers);
+    _leval.setHeaders(_headers);
+    _aeval.setHeaders(_headers);
+    _zipCount = zCount;
+    x.first.index = zCount;
+    for (auto& it : x.cols) {
+      auto colNumErr = boost::apply_visitor(colsOperand{_headers, _pre->varStr}, it);
+      if (colNumErr.second.size() > 0) return colNumErr.second;
+      _cur.str.push_back(colNumErr.first);
+    }
     for (auto &it : x.units) {
       auto x = boost::apply_visitor(*this, it);
       if (x.size() > 0) return x;
     }
+    _cur.uniq();
+    _cur.sort();
+    helper::processHeader(_cur, _headers);
     *_pre = _cur;
     x.colIndices = _cur;
     x.zipCount = _zipCount;
@@ -346,14 +458,26 @@ public:
 
   auto operator()(expr &x) {
     _pre = &x.first.colIndices;
+    std::string inFile{x.first.fname.begin() + 1, x.first.fname.end() - 1};
+    _headers = helper::headerCols(inFile);
+    _meval.setHeaders(_headers);
+    _leval.setHeaders(_headers);
+    _aeval.setHeaders(_headers);
+    x.first.index = 0;
     for (auto &it : x.units) {
       auto x = boost::apply_visitor(*this, it);
       if (x.size() > 0) return x;
     }
+    _cur.uniq();
+    _cur.sort();
+    helper::processHeader(_cur, _headers);
     *_pre = _cur;
     x.colIndices = _cur;
     x.zipCount = _zipCount;
-    return boost::apply_visitor(terminalCheck{_cur}, x.last);
+    auto lastCols = boost::apply_visitor(terminalCheck{_cur, _headers, _isInitial}, x.last);
+    if (lastCols.second.size() > 0) return lastCols.second;
+    x.colIndices.add(lastCols.first);
+    return std::string{};
   }
 };
 /*
@@ -417,12 +541,12 @@ BOOST_FUSION_ADAPT_STRUCT(client::pawn::ast::map,
                           (client::math::ast::expr, operation))
 
 BOOST_FUSION_ADAPT_STRUCT(client::pawn::ast::reduce,
-                          (std::vector<client::pawn::ast::uint_>, cols)
+                          (std::vector<client::pawn::ast::strOperand>, cols)
                           (client::reduce::ast::expr, operation)
                           /*(client::helper::ColIndices, colIndices)*/)
 
 BOOST_FUSION_ADAPT_STRUCT(client::pawn::ast::zipExpr,
-                          (std::vector<client::pawn::ast::uint_>, cols)
+                          (std::vector<client::pawn::ast::strOperand>, cols)
                           (client::pawn::ast::src, first)
                           (std::list<client::pawn::ast::unit>, units)
                           /*(client::helper::ColIndices, colIndices)*/)
@@ -433,7 +557,8 @@ BOOST_FUSION_ADAPT_STRUCT(client::pawn::ast::expr,
                           (client::pawn::ast::terminal, last))
 
 BOOST_FUSION_ADAPT_STRUCT(client::pawn::ast::saveStr,
-                          (unsigned int, src)(std::string, dest))
+                          (client::pawn::ast::strOperand, src)
+                          (std::string, dest))
 
 BOOST_FUSION_ADAPT_STRUCT(client::pawn::ast::saveNum,
                           (client::pawn::ast::numSrc, src)(std::string, dest))

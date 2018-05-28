@@ -120,20 +120,24 @@ namespace client { namespace math { namespace ast
       const ColIndices &_pre;
       const Global &_global;
       bool _isInitial {true};
+      std::vector<std::string> _headers;
     public:
         using result_type = std::pair<ColIndices, std::string>;
         colsEval(const ColIndices &v, const Global &g) : _pre{v}, _global{g} {}
+        void setHeaders(const std::vector<std::string>& h) { _headers = h; }
         void notInitial() { _isInitial = false; }
         result_type operator()(nil) const { BOOST_ASSERT(0); return result_type{}; }
         result_type operator()(double n) const { return result_type{}; }
         result_type operator()(variable const &x) const {
           if (_global.gVarsN.find(x) != std::end(_global.gVarsN)) return result_type{};
+          auto jt = std::find(begin(_headers), end(_headers), x);
+          if (jt != std::end(_headers)) return (*this)((unsigned int)(jt - std::begin(_headers)) + 1);
           auto it = std::find(std::begin(_pre.var), std::end(_pre.var), x);
           if (it == std::end(_pre.var)) return std::make_pair(ColIndices{}, "Error: " + x + " used before declaration.");
           return result_type{};
         }
         result_type operator()(column const &x) const {
-          if (!_isInitial) return std::make_pair(ColIndices{}, "Can't access number columns via column index after reduce.");
+          if (!_isInitial) return std::make_pair(ColIndices{}, "Can't access new input file columns via column name / index after reduce / zip.");
           ColIndices res;
           res.num.push_back(x);
           return std::make_pair(res, "");

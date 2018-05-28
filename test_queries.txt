@@ -1,0 +1,33 @@
+file "data/junk" | $x = $3 * $4 | where $x > 8 | reduce sum($x) | show
+file "data/junk" | $x = $3 * $4 | where $x > 8 | reduce %1 sum($x) | show
+file "data/junk" | $x = $v1 * $4 | where $x > 8 | reduce %k1 sum($x) | show
+file "data/junk" | $x = $v1 * $4 | where $x > 8 and %k1 != "" | show
+file "data/junk" | $x = $v1 * $4 | where $x > 8 and %k1 != "" | reduce %k1 sum($x) | show
+file "data/junk" | $x = $3 * $4 | where %2 != "me" | reduce %1 sum($x) | show
+file "data/junk" | $x = $3 * $4 | reduce %1 sum($x) | show
+file "data/junk" | $x = $4 * $3 | reduce %1 %2 sum($x) | where $sum_x > 2 | show 
+file "data/junk" | $x = $3 * $4 | reduce %1 %2 sum($x) | where %1 == "hi" or %2 == "me" | reduce %1 max($sum_x) | show
+file "data/junk" | $x = $3 * $4 | reduce sum($x) | saveVal $sum_x as $a
+
+file "data/junk" | $x = $3 * $4 | reduce %1 sum($x) | zip %1 (file "data/junk2" | $y = $2 + 100 | reduce %1 sum ($y)) | show
+file "data/junk" | $x = $3 * $4 | zip %1 (file "data/junk2" | where %1 != "" ) | show
+
+file "data/junk" | $x = $3 * $4 | show
+file "data/junk" | reduce sum($3) | show
+file "data/junk" | $x = $3 * $4 | reduce max($x) sum($3) | show
+file "data/junk" | $x = $3 * $4 | reduce max($x) sum($3) max($4) | show
+file "data/junk" | $x = $3 * $4 | reduce max($3) sum($4) max($x) | show
+
+file "t" | $x = $2 * $4 | where %3 == "hey" | $y = $x | reduce %5 sum($1) max($2) | show
+
+LoadFiles  LoadMain1| where C_ID= A OR C_ID=B| set xyz = Lain_1 + Lain_2  + Lain_3 | set abc =(Lain_5+Lain_6)/Lain_7 - Lain_8 | Aggregate Sum(Lain_1), Sum(abc),Sum(xyz),max(Lain_2) by C_ID,Date(DateTime),Hour(DateTime)
+file "data/LoadMain1.txt" | where %C_ID == "A" or %C_ID == "B" | $xyz = $Lain_1 + $Lain_2 + $Lain_3 | $abc = ($Lain_5 + $Lain_6) / $Lain_7 - $Lain_8 | reduce %C_ID %Date %Hour sum($Lain_1) sum($abc) sum($xyz) max($Lain_2) | show
+
+
+LoadFiles LoadMain1| Aggregate Sum(Lain_1), max(Lain_2) by C_ID,Date(DateTime),Hour(DateTime) | Join On C_ID [LoadFiles LoadMain2| Aggregate Sum(Main_1), Sum(Main_5) by C_ID,Date(DateTime),Hour(DateTime) ]
+file "data/LoadMain1.txt" |  reduce %C_ID %Date %Hour sum($Lain_1) max($Lain_2) | zip %C_ID (file "data/LoadMain2.txt" | reduce %C_ID %Date %Hour sum($Main_1) sum($Main_5)) | show
+
+LoadFiles LoadMain1| Where  Hour(DateTime) =   [LoadFiles LoadMain2 | Aggregate Sum(Main_1) as ABC by Date(DateTime),Hour(DateTime) | Sort ABC | top 1 | Select Hour]
+file "data/LoadMain2.txt" | reduce %Date %Hour sum($Main_1) | reduce max($sum_Main_1) | saveVal $max_sum_Main_1 as $maxSumMain1
+file "data/LoadMain2.txt" | reduce %Date %Hour sum($Main_1) | where $sum_Main_1 == $maxSumMain1 | saveVal %Hour as %maxSumMain1Hour
+file "data/LoadMain1.txt" | where %Hour == %maxSumMain1Hour | show

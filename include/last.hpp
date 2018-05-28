@@ -106,6 +106,7 @@ namespace client { namespace logical { namespace ast
     public:
         using result_type = std::pair<ColIndices, std::string>;
         colsEval(const ColIndices &v, const helper::Global &g) : rColsEval{v, g} {}
+        void setHeaders(const std::vector<std::string>& h) { rColsEval.setHeaders(h); }
 
         void notInitial() { rColsEval.notInitial(); }
         result_type operator()(bool n) const { return result_type{}; }

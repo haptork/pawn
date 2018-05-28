@@ -1,7 +1,9 @@
 #include <random>
 #include <stdexcept>
+#include <fstream>
 
 #include <boost/mpi.hpp>
+#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
 
 #include <ezl.hpp>
@@ -18,7 +20,7 @@ using sourceT = std::shared_ptr<ezl::Source<dataT>>;
 
 std::vector<sourceT> sources;
 
-sourceT internalZip(client::pawn::ast::zipExpr&, std::vector<int> workers, client::helper::Global &global);
+sourceT internalZip(client::pawn::ast::zipExpr&, std::vector<int> workers, client::helper::Global &global, int zCount);
 
 std::string sanityCheck(const client::helper::ColIndices& cols) { 
   if (cols.num.empty() && cols.str.empty()) {
@@ -67,10 +69,24 @@ auto cookAst(std::string str, const client::helper::Global &global) {
   return std::make_pair(res, false);
 }
 
-auto getSource(client::pawn::ast::src &s, std::vector<int> workers) {
+auto getSource(client::pawn::ast::src &s, std::vector<int> workers, int zCount) {
   using ezl::rise; using ezl::fromFilePawn;
+  std::vector<int> curWorkers;
+  if (zCount == 0) {
+    curWorkers = std::move(workers);
+  } else {
+    int share = workers.size() / (zCount + 1);
+    if (share == 0) {
+      if (s.index == 0) ezl::Karta::inst().log0("Not enough processes to complete the query but still trying!", ezl::LogMode::warning);
+      share = 1;
+    }
+    for (auto i = 0; i < share && (share * s.index + i) < workers.size(); ++i) {
+      curWorkers.push_back(workers[share * s.index + i]);
+    }
+    if (curWorkers.empty()) curWorkers.push_back(workers[workers.size() - 1]);
+  }
   std::string inFile{s.fname.begin() + 1, s.fname.end() - 1};
-  return rise(fromFilePawn(inFile, s.colIndices.str, s.colIndices.num)).prll(workers).build();
+  return rise(fromFilePawn(inFile, s.colIndices.str, s.colIndices.num)).prll(curWorkers).build();
 }
 
 struct AddUnits {
@@ -100,8 +116,9 @@ struct AddUnits {
   bool _isDump;
   std::vector<int> _workers;
   Global &_global;
-  AddUnits(std::string fn, bool isDump, std::vector<int> workers, Global &g) : _posTell{_indices}, _meval{_posTell, g},
-          _leval{_posTell, g}, _aeval{_posTell}, _fname{fn}, _isDump{isDump}, _workers{workers}, _global{g} { }
+  int _zCount;
+  AddUnits(std::string fn, bool isDump, std::vector<int> workers, Global &g, int zCount) : _posTell{_indices}, _meval{_posTell, g},
+          _leval{_posTell, g}, _aeval{_posTell}, _fname{fn}, _isDump{isDump}, _workers{workers}, _global{g}, _zCount{zCount} { }
 
   void operator()(mapT const &m) {
     auto fn = _meval(m.operation);
@@ -109,18 +126,18 @@ struct AddUnits {
       v.push_back(fn(v));
       return std::make_tuple(v);
     }).colsTransform();
-    if (_isShow) x.dump(_fname); 
+    if (_isShow) x.dump(_fname, cookDumpHeader(_indices)); 
     _cur = x.build();
   }
 
   void operator()(filterT const &f) {
     auto fn = _leval(f);
     auto x = ezl::flow(_cur).filter(std::move(fn));
-    if (_isShow) x.dump(_fname); 
+    if (_isShow) x.dump(_fname, cookDumpHeader(_indices)); 
     _cur = x.build();
   }
 
-  void columnSelect(std::vector<unsigned int> vstr) {
+  void columnSelect(std::vector<size_t> vstr) {
     std::vector<int> keepIndices;
     for (auto it : vstr) {
       keepIndices.push_back(_posTell.str(it));
@@ -138,15 +155,15 @@ struct AddUnits {
     using resT = std::tuple<std::vector<double>>&;
     using keyT = const std::vector<std::string>&;
     using rowT = const std::vector<double>&;
-    if (r.cols.size() < _indices.str.size()) columnSelect(r.cols);
-    auto fl = internalZip(r, _workers, _global);
+    if (r.colIndices.str.size() < _indices.str.size()) columnSelect(r.colIndices.str);
+    auto fl = internalZip(r, _workers, _global, _zCount);
     auto x = ezl::flow(_cur).zip<1>(std::move(fl)).prll({0}, ezl::llmode::task).colsDrop<3>()
                .map<2, 3>([](std::vector<double> v1, std::vector<double> v2) {
                  std::move(begin(v2), end(v2), std::back_inserter(v1));
                  return std::make_tuple(v1);
                }).colsTransform();
     _indices = r.colIndices;
-    if (_isShow) x.dump(_fname); 
+    if (_isShow) x.dump(_fname, cookDumpHeader(_indices)); 
     _cur = x.build();
   }
 
@@ -155,7 +172,7 @@ struct AddUnits {
     using resT = std::tuple<std::vector<double>>&;
     using keyT = const std::vector<std::string>&;
     using rowT = const std::vector<double>&;
-    if (r.cols.size() < _indices.str.size()) columnSelect(r.cols);
+    if (r.colIndices.str.size() < _indices.str.size()) columnSelect(r.colIndices.str);
     auto vf = _aeval(r.operation);
     auto fn = [vf](resT r, keyT k, rowT c) -> auto& { for (const auto &f : vf) f(r, k, c); return r; };
     auto initial = std::make_tuple(std::vector<double>(vf.size()));
@@ -167,7 +184,7 @@ struct AddUnits {
     auto y = x.reduce<1>(std::move(fn2), std::move(initial)).prll({0}, ezl::llmode::task);
     _aeval.sameIndex(false);
     _indices = r.colIndices;
-    if (_isShow) y.dump(_fname); 
+    if (_isShow) y.dump(_fname, cookDumpHeader(_indices)); 
     _cur = y.build();
   }
 
@@ -213,13 +230,30 @@ public:
       return std::get<1>(_data)[_posTell.num(s)];
     }
   };
+  struct saveStrHelper {
+  private:
+    const dataT _data;
+    client::helper::positionTeller _posTell;
+  public:
+    using result_type = std::string;
+    saveStrHelper(const dataT data, const client::helper::positionTeller &c) 
+      : _data{data}, _posTell{c} { }
+
+    result_type operator()(std::string s) const {
+      return std::get<0>(_data)[_posTell.varStr(s)];
+    }
+
+    result_type operator()(unsigned int s) const {
+      return std::get<0>(_data)[_posTell.str(s)];
+    }
+  };
 
   void operator()(const client::pawn::ast::saveNum& s) {
     _global.gVarsN[s.dest] = boost::apply_visitor(saveNumHelper{_data, _posTell}, s.src);
   }
 
   void operator()(const client::pawn::ast::saveStr &s) {
-    _global.gVarsS[s.dest] = std::get<0>(_data)[_posTell.str(s.src)];
+    _global.gVarsS[s.dest] = boost::apply_visitor(saveStrHelper{_data, _posTell}, s.src);
   }
 
   void operator()(client::pawn::ast::saveVal const &s) {
@@ -266,10 +300,10 @@ public:
   result_type operator()(const saveVal& s) const { return std::make_pair("", terminalType::val); }
 };
 
-sourceT internalZip(client::pawn::ast::zipExpr &expression, std::vector<int> workers, client::helper::Global &global) {
-  sourceT src = getSource(expression.first,  workers);
+sourceT internalZip(client::pawn::ast::zipExpr &expression, std::vector<int> workers, client::helper::Global &global, int zCount) {
+  sourceT src = getSource(expression.first,  workers, zCount);
   sources.push_back(src);
-  AddUnits addUnits{"", false, workers, global};
+  AddUnits addUnits{"", false, workers, global, zCount};
   auto cur = addUnits(src, expression.first.colIndices, expression.units);
   return cur;
 }
@@ -286,8 +320,8 @@ auto readQuery(std::string line, std::vector<int> workers, client::helper::Globa
     global.gQueries[terminalInfo.first] = line;
     return true;
   }
-  sourceT src = getSource(expression.first, workers);
-  AddUnits addUnits{terminalInfo.first, true, workers, global};
+  sourceT src = getSource(expression.first, workers, expression.zipCount);
+  AddUnits addUnits{terminalInfo.first, true, workers, global, expression.zipCount};
   auto cur = addUnits(src, expression.first.colIndices, expression.units);
   runFlow(cur, workers, terminalInfo.second == terminalType::val, expression, global);
   sources.clear();
@@ -304,11 +338,6 @@ auto pawn(int argc, char *argv[]) {
     workers.resize(ezl::Karta::inst().nProc() - 1);
     std::iota(begin(workers), end(workers), 1);
   }
-  /*
-  auto scheduler = [](std::vector<int> workers) {
-    return workers;
-  };
-  */
   ezl::Karta::inst().print0("\nType pawn expressions... or [q or Q] to quit");
   ezl::Karta::inst().print0("e.x.: file \"t\" | $xz = $1 + ($2 * 3) | where "
                             "($xz == 5.0 * 2 and $1 > $4 / 2) | show\n");

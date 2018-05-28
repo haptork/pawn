@@ -37,22 +37,22 @@ namespace client { namespace pawn { namespace parser
 
         quoted_string = raw[lexeme['"' >> +(char_ - '"') >> '"']];
 
-        unit = identifier >> '=' >> mathExpr
+        unit = '$' >> identifier >> '=' >> mathExpr
              | "where" >> logicalExpr
              | "reduce" >> reduceCols >> reduceExpr
              | "zip" >> zipExpr;
 
         zipExpr = reduceCols >> '('  >> src >> *('|' >> unit) >> ')'; ;
         
-        reduceCols = *('%' >> uint_);
+        reduceCols = *(strOperand);
 
-        identifier = '$' >> raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
+        identifier =  raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
 
-        strIdentifier = '%' >> raw[lexeme[(alpha | '_') >> *(alnum | '_')]];
+        strOperand = '%' >> (identifier | uint_);
 
-        saveStr = '%' >> uint_ >> "as" >> strIdentifier;
+        saveStr = strOperand >> "as" >> '%' >> identifier;
 
-        saveNum = ((identifier | ('$' >> uint_)) >> "as" >> identifier);
+        saveNum = (('$' >> identifier | ('$' >> uint_)) >> "as" >> '$' >> identifier);
 
         saveVal = "saveVal" > +(saveNum | saveStr);
 
@@ -74,7 +74,7 @@ namespace client { namespace pawn { namespace parser
             (unit)
             (reduceCols)
             (identifier)
-            (strIdentifier)
+            (strOperand)
             (saveStr)
             (saveNum)
             (saveVal)
