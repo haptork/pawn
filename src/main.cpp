@@ -362,6 +362,37 @@ auto pawn(int argc, char *argv[]) {
   .run();
 }
 
+auto pawnCmd(int argc, char *argv[]) {
+  int master = 0;
+  auto nProc = ezl::Karta::inst().nProc();
+  std::vector<int> workers;
+  if (nProc == 1) {
+    workers.push_back(0);
+  } else {
+    workers.resize(ezl::Karta::inst().nProc() - 1);
+    std::iota(begin(workers), end(workers), 1);
+  }
+  client::helper::Global global;
+  auto ln = std::string{argv[1]};
+  auto queryCin = [&global, &ln]{
+    auto line = ln;
+    if (line.empty() || line[0] == 'q' || line[0] == 'Q') {
+      return std::make_pair(line, false);
+    }
+    auto isGood = cookAst(line, global).second;
+    if (!isGood) line = "";
+    //auto curWorkers = scheduler(workers);
+    ln = "";
+    return std::make_pair(line, true);
+  };
+  ezl::rise(queryCin).prll({master})
+  .filter([&workers, &global](std::string line) {
+    if (line == "") return false;
+    return readQuery(line, workers, global);
+  }).prll(1.0, ezl::llmode::task | ezl::llmode::dupe)
+  .run();
+}
+
 int main(int argc, char *argv[]) {
   boost::mpi::environment env(argc, argv, false);
   try {
