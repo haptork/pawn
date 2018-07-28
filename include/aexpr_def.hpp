@@ -33,6 +33,7 @@ namespace client { namespace reduce { namespace parser
         op.add
             ("sum", ast::optoken::sum)
             ("max", ast::optoken::max)
+            ("count", ast::optoken::count)
             ;
 
         ///////////////////////////////////////////////////////////////////////

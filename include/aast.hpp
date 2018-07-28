@@ -27,7 +27,8 @@ namespace client { namespace reduce { namespace ast
 
     enum class optoken : int {
       sum,
-      max
+      max,
+      count
     };
 
     typedef boost::variant<variable , column> operand;
@@ -49,6 +50,7 @@ namespace client { namespace reduce { namespace ast
             switch (o) {
                 case optoken::sum: std::cout << " sum"; break;
                 case optoken::max: std::cout << " max"; break;
+                case optoken::count: std::cout << " count"; break;
             }
         }
         
@@ -94,6 +96,7 @@ namespace client { namespace reduce { namespace ast
           switch (x.operator_) {
               case optoken::sum: _nm = std::string{"sum"}; break;
               case optoken::max: _nm = std::string{"max"};
+              case optoken::count: _nm = std::string{"count"};
           }
           return boost::apply_visitor(*this, x.operand_);
       }
@@ -114,6 +117,7 @@ namespace client { namespace reduce { namespace ast
     struct evaluator {
     private:
       struct indexHelper {
+        using result_type = int;
         const helper::positionTeller _index;
         indexHelper(helper::positionTeller p) : _index{p} {}
         int operator()(variable var) const {
@@ -143,6 +147,7 @@ namespace client { namespace reduce { namespace ast
             {
                 case optoken::sum: return [i, j](resT r, keyT, rowT c) -> auto& { std::get<0>(r)[i] += c[j]; return r; };
                 case optoken::max: return [i, j](resT r, keyT, rowT c) -> auto& { if (c[j] > std::get<0>(r)[i]) std::get<0>(r)[i] = c[j]; return r; };
+                case optoken::count: return [i, j](resT r, keyT, rowT c) -> auto& { std::get<0>(r)[i] += 1.0; return r; };
             }
             return [i, j](resT r, keyT, rowT c) -> auto& { if (c[j] > std::get<0>(r)[i]) std::get<0>(r)[i] = c[j]; return r; };
         }
