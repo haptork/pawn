@@ -19,6 +19,7 @@
 #include <aast.hpp>
 #include <helper.hpp>
 #include <last.hpp>
+#include <lcast.hpp>
 #include <mast.hpp>
 
 namespace client {
@@ -28,6 +29,7 @@ using ColIndices = client::helper::ColIndices;
 using uint_ = unsigned int;
 using mathExpr = client::math::ast::expr;
 using logicalExpr = client::logical::ast::expr;
+using logicalCmd = client::logicalc::ast::expr;
 using reduceExpr = client::reduce::ast::expr;
 
 struct src {
@@ -46,7 +48,7 @@ struct map {
   mathExpr operation;
 };
 
-using filter = logicalExpr;
+using filter = boost::variant<logicalExpr, logicalCmd>;
 
 struct reduce {
   std::vector<strOperand> cols;
@@ -109,11 +111,22 @@ struct printer {
     std::cout << " | ";
   }
 
-  void operator()(filter const &f) const {
+  void operator()(logicalExpr const &f) const {
     client::logical::ast::printer logicalPrint;
-    std::cout << "filter with ";
+    std::cout << "filter with expr ";
     logicalPrint(f);
     std::cout << " | ";
+  }
+
+  void operator()(logicalCmd const &f) const {
+    client::logicalc::ast::printer logicalPrint;
+    std::cout << "filter with cmd ";
+    logicalPrint(f);
+    std::cout << " | ";
+  }
+
+  void operator()(filter const &f) const {
+    boost::apply_visitor(*this, f);
   }
 
   struct printStrOperand {
@@ -213,6 +226,7 @@ private:
   client::math::ast::colsEval _meval;
   client::logical::ast::colsEval _leval;
   client::reduce::ast::colsEval _aeval;
+  client::logicalc::ast::colsEval _lcmd;
   enum class state : int { none, first, many };
   state _st{state::none};
   int _zipCount = 0;
@@ -320,7 +334,7 @@ public:
   typedef std::string result_type;
   colsEval(const Global &global)
       : _global{global}, _cur{}, _meval{_cur, _global},
-        _leval{_cur, _global}, _aeval{_cur} {}
+        _leval{_cur, _global}, _aeval{_cur}, _lcmd{} {}
 
   result_type operator()(map const &m) {
     auto i = std::find(std::begin(_cur.var), std::end(_cur.var), m.identifier);
@@ -335,10 +349,19 @@ public:
     return x.second;
   }
 
-  result_type operator()(filter const &f) {
+  result_type operator()(logicalExpr const &f) {
     auto x =  _leval(f); 
     _cur.add(x.first);
     return x.second;
+  }
+
+  result_type operator()(logicalCmd const &f) {
+    auto x =  _lcmd(f); 
+    return x.second;
+  }
+
+  result_type operator()(filter const &f) {
+    return boost::apply_visitor(*this, f);
   }
 
   std::string hitReduce(ColIndices &cl) {
@@ -362,6 +385,7 @@ public:
     _meval.notInitial();
     _leval.notInitial();
     _aeval.notInitial();
+    //_lcmd.notInitial();
   }
   
 

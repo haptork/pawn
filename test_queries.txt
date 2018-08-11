@@ -31,3 +31,15 @@ LoadFiles LoadMain1| Where  Hour(DateTime) =   [LoadFiles LoadMain2 | Aggregate 
 file "data/LoadMain2.txt" | reduce %Date %Hour sum($Main_1) | reduce max($sum_Main_1) | saveVal $max_sum_Main_1 as $maxSumMain1
 file "data/LoadMain2.txt" | reduce %Date %Hour sum($Main_1) | where $sum_Main_1 == $maxSumMain1 | saveVal %Hour as %maxSumMain1Hour
 file "data/LoadMain1.txt" | where %Hour == %maxSumMain1Hour | show
+
+cmd - filter from shared lib
+=====
+
+file "data/junk" | $x = $3 * $4 | where cmd "./gt.so" fn | show
+
+cmd argument query
+======
+
+file \"data/LoadMain1.txt\" | where %C_ID == \"A\" or %C_ID == \"B\" | \$xyz = \$Lain_1 + \$Lain_2 + \$Lain_3 | \$abc = (\$Lain_5 + \$Lain_6) / \$Lain_7 - \$Lain_8 | reduce %C_ID %Date %Hour sum(\$Lain_1) sum(\$abc) sum(\$xyz) max(\$Lain_2) | show
+
+file \"data/LoadMain1.txt\" | where %C_ID == \"A\" or %C_ID == \"B\" | \$xyz = \$Lain_1 + \$Lain_2 + \$Lain_3 | \$abc = (\$Lain_5 + \$Lain_6) / \$Lain_7 - \$Lain_8 | reduce %C_ID %Date %Hour sum(\$Lain_1) sum(\$abc) sum(\$xyz) max(\$Lain_2) | show

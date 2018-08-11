@@ -12,6 +12,7 @@
 #include <helper.hpp>
 #include <mast.hpp>
 #include <last.hpp>
+#include <lcast.hpp>
 #include <pawn_ast.hpp>
 #include <pawn_grammar.hpp>
 
@@ -100,9 +101,13 @@ struct AddUnits {
   using mevalT = client::math::ast::evaluator;
   using levalT = client::logical::ast::evaluator;
   using aevalT = client::reduce::ast::evaluator;
+  using lcmdT = client::logicalc::ast::evaluator;
   using ColIndices = client::helper::ColIndices;
   using Global = client::helper::Global;
   using positionTeller = client::helper::positionTeller;
+
+  using logicalExpr = client::logical::ast::expr;
+  using logicalCmd = client::logicalc::ast::expr;
 
   sourceT _cur;
   ColIndices _indices;
@@ -111,6 +116,7 @@ struct AddUnits {
   mevalT _meval;
   levalT _leval;
   aevalT _aeval;
+  lcmdT _lcmd;
   bool _isShow {false};
   std::string _fname;
   bool _isDump;
@@ -118,7 +124,7 @@ struct AddUnits {
   Global &_global;
   int _zCount;
   AddUnits(std::string fn, bool isDump, std::vector<int> workers, Global &g, int zCount) : _posTell{_indices}, _meval{_posTell, g},
-          _leval{_posTell, g}, _aeval{_posTell}, _fname{fn}, _isDump{isDump}, _workers{workers}, _global{g}, _zCount{zCount} { }
+          _leval{_posTell, g}, _aeval{_posTell}, _lcmd{}, _fname{fn}, _isDump{isDump}, _workers{workers}, _global{g}, _zCount{zCount} { }
 
   void operator()(mapT const &m) {
     auto fn = _meval(m.operation);
@@ -130,11 +136,22 @@ struct AddUnits {
     _cur = x.build();
   }
 
-  void operator()(filterT const &f) {
+  void operator()(logicalExpr const &f) {
     auto fn = _leval(f);
     auto x = ezl::flow(_cur).filter(std::move(fn));
     if (_isShow) x.dump(_fname, cookDumpHeader(_indices)); 
     _cur = x.build();
+  }
+
+  void operator()(logicalCmd const &f) {
+    auto fn = _lcmd(f);
+    auto x = ezl::flow(_cur).filter(std::move(fn));
+    if (_isShow) x.dump(_fname, cookDumpHeader(_indices)); 
+    _cur = x.build();
+  }
+
+  void operator()(filterT const &f) {
+    return boost::apply_visitor(*this, f);
   }
 
   void columnSelect(std::vector<size_t> vstr) {

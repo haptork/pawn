@@ -7,7 +7,7 @@ namespace client { namespace pawn { namespace parser
     template <typename Iterator>
     expression<Iterator>::expression(error_handler<Iterator>& error_handler)
       : expression::base_type(expr), mathExpr{error_handler}, logicalExpr{error_handler}
-      , reduceExpr{error_handler}
+      , reduceExpr{error_handler}, logicalCmd{error_handler}
     {
         qi::_1_type _1;
         qi::_2_type _2;
@@ -38,7 +38,7 @@ namespace client { namespace pawn { namespace parser
         quoted_string = raw[lexeme['"' >> +(char_ - '"') >> '"']];
 
         unit = '$' >> identifier >> '=' >> mathExpr
-             | "where" >> logicalExpr
+             | "where" >> (logicalExpr | logicalCmd)
              | "reduce" >> reduceCols >> reduceExpr
              | "zip" >> zipExpr;
 
