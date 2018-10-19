@@ -21,7 +21,7 @@ OBJECTSTEST := $(OBJECTSTEST) $(OBJECTS)
 TESTS := $(filter-out main.cpp, $(TESTS))
 OBJECTSTEST := $(filter-out build/main.o, $(OBJECTSTEST))
 CFLAGS := -O3 -Wall -std=c++14
-LIB := -lboost_serialization -lboost_mpi
+LIB := -lboost_serialization -lboost_mpi -ldl
 INC := -I include -I easyLambda/include
 
 $(TARGET): $(OBJECTS)
